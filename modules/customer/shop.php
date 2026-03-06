@@ -1,9 +1,7 @@
 <?php
-// shop.php
 session_start();
 require_once '../../config/config.php';
 
-// --- SECURITY CHECK ---
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
     header("Location: ../../customer-login.php");
     exit();
@@ -11,8 +9,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
 
 $user_id = $_SESSION['user_id'];
 
-// --- 1. FETCH WISHLIST DATA ---
-// We need to know which products the customer has already favorited so we can color the hearts red!
 $wishlist_query = "SELECT product_id FROM wishlist WHERE user_id = ?";
 $w_stmt = $conn->prepare($wishlist_query);
 $w_stmt->bind_param("i", $user_id);
@@ -24,13 +20,9 @@ while ($row = $w_result->fetch_assoc()) {
 }
 $w_stmt->close();
 
-// --- 2. FETCH CATEGORIES FOR SIDEBAR ---
-// Get all unique categories that actually have active products
 $cat_query = "SELECT DISTINCT category FROM products WHERE status = 'active' ORDER BY category ASC";
 $categories = $conn->query($cat_query);
 
-// --- 3. FETCH CART DATA ---
-// We need to know what's already in the cart to display the correct quantity
 $cart_query = "SELECT product_id, quantity FROM cart WHERE user_id = ?";
 $c_stmt = $conn->prepare($cart_query);
 $c_stmt->bind_param("i", $user_id);
@@ -38,12 +30,11 @@ $c_stmt->execute();
 $cart_items = $c_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $c_stmt->close();
 $user_cart = array_column($cart_items, 'quantity', 'product_id');
+$cart_total_items = array_sum($user_cart);
 
-// --- 3. FILTERING LOGIC ---
 $selected_category = isset($_GET['category']) ? $_GET['category'] : '';
 $search_query = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-// Build the dynamic SQL query for products
 $sql = "SELECT product_id, name, brand, category, price, discount_price, stock, image_url 
         FROM products 
         WHERE status = 'active'";
@@ -134,7 +125,6 @@ require_once '../../includes/customer_header.php';
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
                         <?php while ($product = $products->fetch_assoc()): ?>
                             <?php 
-                                // Check if this product is in the user's wishlist array we built earlier!
                                 $is_favorited = in_array($product['product_id'], $user_wishlist);
                                 $cart_qty = $user_cart[$product['product_id']] ?? 1;
                             ?>
@@ -214,13 +204,30 @@ require_once '../../includes/customer_header.php';
     </div>
 </main>
 
+<a href="cart.php" id="checkout-fab" class="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold px-5 py-3.5 rounded-2xl shadow-2xl transition-all duration-200 group" style="box-shadow: 0 8px 30px rgba(45,91,227,0.45);">
+    <div class="relative">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+        </svg>
+        <?php if ($cart_total_items > 0): ?>
+            <span id="fab-badge" class="absolute -top-2.5 -right-2.5 bg-yellow-400 text-blue-900 text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full border-2 border-blue-600"><?php echo $cart_total_items; ?></span>
+        <?php else: ?>
+            <span id="fab-badge" class="absolute -top-2.5 -right-2.5 bg-yellow-400 text-blue-900 text-[10px] font-black w-5 h-5 items-center justify-center rounded-full border-2 border-blue-600 hidden"></span>
+        <?php endif; ?>
+    </div>
+    <span class="text-sm tracking-wide">View Cart &amp; Checkout</span>
+    <svg class="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
+    </svg>
+</a>
+
 <script>
 function showToast(message, type = 'success') {
     let container = document.getElementById('toast-container');
     if (!container) {
         container = document.createElement('div');
         container.id = 'toast-container';
-        container.className = 'fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none';
+        container.className = 'fixed bottom-24 right-4 z-50 flex flex-col gap-2 pointer-events-none';
         document.body.appendChild(container);
     }
 
@@ -233,11 +240,8 @@ function showToast(message, type = 'success') {
         : '<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
 
     toast.innerHTML = `${icon}<span class="font-medium text-sm">${message}</span>`;
-
     container.appendChild(toast);
-
     requestAnimationFrame(() => toast.classList.remove('translate-y-4', 'opacity-0'));
-
     setTimeout(() => {
         toast.classList.add('opacity-0', 'translate-y-4');
         setTimeout(() => toast.remove(), 300);
@@ -246,10 +250,22 @@ function showToast(message, type = 'success') {
 
 function adjustLocalQty(productId, delta) {
     const input = document.getElementById('input-qty-' + productId);
-    let currentQty = parseInt(input.value) || 0;
-    let newQty = currentQty + delta;
+    let newQty = (parseInt(input.value) || 0) + delta;
     if (newQty < 0) newQty = 0;
     input.value = newQty;
+}
+
+function updateFabBadge(count) {
+    const badge = document.getElementById('fab-badge');
+    if (!badge) return;
+    if (count > 0) {
+        badge.textContent = count;
+        badge.classList.remove('hidden');
+        badge.classList.add('flex');
+    } else {
+        badge.classList.add('hidden');
+        badge.classList.remove('flex');
+    }
 }
 
 function submitCart(productId) {
@@ -260,10 +276,9 @@ function submitCart(productId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ product_id: productId, action: 'update', quantity: quantity })
     }).then(res => res.json()).then(data => {
-        if(data.success) {
+        if (data.success) {
             showToast(data.message, 'success');
-            
-            // Update cart count in header
+
             const cartLink = document.querySelector('a[href="cart.php"]');
             if (cartLink) {
                 let badge = cartLink.querySelector('span');
@@ -276,10 +291,10 @@ function submitCart(productId) {
                 if (data.cart_count === 0 && badge) badge.remove();
             }
 
-            // Update Button State (Blue 'Add' <-> Green 'Update')
+            updateFabBadge(data.cart_count);
+
             const btn = document.getElementById('btn-add-' + productId);
             const btnText = document.getElementById('btn-text-' + productId);
-            
             if (btn && btnText) {
                 if (data.quantity > 0) {
                     btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
@@ -302,8 +317,6 @@ function submitCart(productId) {
 
 function toggleWishlist(productId, buttonElement) {
     const icon = buttonElement.querySelector('.wishlist-icon');
-    
-    // Call the PHP script we made earlier
     fetch('../../core/customer/toggle_wishlist.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -311,19 +324,14 @@ function toggleWishlist(productId, buttonElement) {
     })
     .then(response => response.json())
     .then(data => {
-        if (data.status === 'error') {
-            showToast(data.message, 'error');
-            return;
-        }
-        
-        // Visually toggle the heart color!
+        if (data.status === 'error') { showToast(data.message, 'error'); return; }
         if (data.status === 'added') {
-            icon.setAttribute('fill', 'currentColor'); // Solid fill
+            icon.setAttribute('fill', 'currentColor');
             icon.classList.remove('text-gray-400');
             icon.classList.add('text-red-500');
             showToast("Added to Wishlist", 'success');
         } else if (data.status === 'removed') {
-            icon.setAttribute('fill', 'none'); // Hollow fill
+            icon.setAttribute('fill', 'none');
             icon.classList.remove('text-red-500');
             icon.classList.add('text-gray-400');
             showToast("Removed from Wishlist", 'success');

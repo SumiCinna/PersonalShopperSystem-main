@@ -1,8 +1,6 @@
 <?php
-// index.php (Landing Page)
 session_start();
 
-// If already logged in, redirect to appropriate dashboard
 if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
     if($_SESSION['role'] === 'admin') {
         header('Location: modules/admin/dashboard.php');
@@ -23,10 +21,22 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Welcome to PSS - Personal Shopper System</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        html { scroll-behavior: smooth; }
+
+        @keyframes blob {
+            0%   { transform: translate(0px, 0px) scale(1); }
+            33%  { transform: translate(30px, -50px) scale(1.1); }
+            66%  { transform: translate(-20px, 20px) scale(0.9); }
+            100% { transform: translate(0px, 0px) scale(1); }
+        }
+        .animate-blob { animation: blob 7s infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
+        .animation-delay-4000 { animation-delay: 4s; }
+    </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-800">
 
-    <!-- Navigation -->
     <nav class="bg-white shadow-sm sticky top-0 z-50">
         <div class="container mx-auto px-6 py-4 flex justify-between items-center">
             <div class="flex items-center gap-2">
@@ -35,19 +45,17 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
                 </div>
                 <span class="text-xl font-bold text-slate-800 tracking-tight">PSS Grocery</span>
             </div>
-            
-            <!-- Desktop Menu -->
+
             <div class="hidden md:flex items-center space-x-8">
                 <a href="#features" class="text-sm font-semibold text-slate-600 hover:text-blue-600 transition">Features</a>
-                
-                <!-- Staff Dropdown -->
-                <div class="relative group">
-                    <button class="text-sm font-semibold text-slate-600 hover:text-blue-600 transition flex items-center outline-none">
+
+                <div class="relative" id="staff-menu">
+                    <button class="text-sm font-semibold text-slate-600 hover:text-blue-600 transition flex items-center outline-none select-none">
                         Staff Access
                         <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                     </button>
-                    <div class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 hidden group-hover:block overflow-hidden z-50">
-                        <a href="admin-login.php" class="block px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600 border-b border-slate-50">Admin Portal</a>
+                    <div id="staff-dropdown" class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50" style="display:none;">
+                        <a href="admin-login.php" class="block px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600 border-b border-slate-100">Admin Portal</a>
                         <a href="cashier-login.php" class="block px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600">Cashier Terminal</a>
                     </div>
                 </div>
@@ -59,11 +67,9 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
         </div>
     </nav>
 
-    <!-- Hero Section -->
     <header class="relative bg-white overflow-hidden">
         <div class="container mx-auto px-6 py-20 md:py-32 flex flex-col-reverse md:flex-row items-center">
             
-            <!-- Text Content -->
             <div class="w-full md:w-1/2 pr-0 md:pr-12 text-center md:text-left mt-12 md:mt-0">
                 <div class="inline-block bg-blue-50 text-blue-600 text-xs font-bold px-3 py-1 rounded-full mb-6 uppercase tracking-wider">
                     Personal Shopper System
@@ -86,7 +92,6 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
                 </div>
             </div>
 
-            <!-- Hero Image / Illustration -->
             <div class="w-full md:w-1/2 flex justify-center">
                 <div class="relative w-full max-w-lg">
                     <div class="absolute top-0 -left-4 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
@@ -94,7 +99,6 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
                     <div class="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
                     
                     <div class="relative bg-white bg-opacity-80 backdrop-blur-sm rounded-2xl shadow-2xl border border-white p-6 transform rotate-2 hover:rotate-0 transition duration-500">
-                        <!-- Mockup of a product card -->
                         <div class="flex items-center space-x-4 mb-4">
                             <div class="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
                                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
@@ -123,7 +127,6 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
         </div>
     </header>
 
-    <!-- Features Section -->
     <section id="features" class="py-24 bg-slate-50">
         <div class="container mx-auto px-6">
             <div class="text-center max-w-2xl mx-auto mb-16">
@@ -132,43 +135,33 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
             </div>
             
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <!-- Feature 1 -->
                 <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition duration-300">
                     <div class="w-14 h-14 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-6">
                         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
                     </div>
                     <h3 class="text-xl font-bold text-slate-900 mb-3">Live Inventory</h3>
-                    <p class="text-slate-500 leading-relaxed">
-                        Our system tracks stock in real-time. If you can add it to your cart, it's on our shelves. No more substitutions.
-                    </p>
+                    <p class="text-slate-500 leading-relaxed">Our system tracks stock in real-time. If you can add it to your cart, it's on our shelves. No more substitutions.</p>
                 </div>
                 
-                <!-- Feature 2 -->
                 <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition duration-300">
                     <div class="w-14 h-14 bg-green-50 text-green-600 rounded-xl flex items-center justify-center mb-6">
                         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     </div>
                     <h3 class="text-xl font-bold text-slate-900 mb-3">Quick Pickup</h3>
-                    <p class="text-slate-500 leading-relaxed">
-                        Place your order online and we'll pack it for you. Just show your order ID at the counter and go.
-                    </p>
+                    <p class="text-slate-500 leading-relaxed">Place your order online and we'll pack it for you. Just show your order ID at the counter and go.</p>
                 </div>
                 
-                <!-- Feature 3 -->
                 <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition duration-300">
                     <div class="w-14 h-14 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center mb-6">
                         <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
                     </div>
                     <h3 class="text-xl font-bold text-slate-900 mb-3">Secure Payments</h3>
-                    <p class="text-slate-500 leading-relaxed">
-                        Pay via GCash for a contactless experience, or pay with cash when you pick up your items.
-                    </p>
+                    <p class="text-slate-500 leading-relaxed">Pay via GCash for a contactless experience, or pay with cash when you pick up your items.</p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- Footer -->
     <footer class="bg-slate-900 text-slate-400 py-12 border-t border-slate-800">
         <div class="container mx-auto px-6">
             <div class="flex flex-col md:flex-row justify-between items-center">
@@ -188,23 +181,32 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
         </div>
     </footer>
 
-    <style>
-        @keyframes blob {
-            0% { transform: translate(0px, 0px) scale(1); }
-            33% { transform: translate(30px, -50px) scale(1.1); }
-            66% { transform: translate(-20px, 20px) scale(0.9); }
-            100% { transform: translate(0px, 0px) scale(1); }
-        }
-        .animate-blob {
-            animation: blob 7s infinite;
-        }
-        .animation-delay-2000 {
-            animation-delay: 2s;
-        }
-        .animation-delay-4000 {
-            animation-delay: 4s;
-        }
-    </style>
+    <script>
+        var menu = document.getElementById('staff-menu');
+        var dropdown = document.getElementById('staff-dropdown');
+        var hideTimer;
+
+        menu.addEventListener('mouseenter', function() {
+            clearTimeout(hideTimer);
+            dropdown.style.display = 'block';
+        });
+
+        menu.addEventListener('mouseleave', function() {
+            hideTimer = setTimeout(function() {
+                dropdown.style.display = 'none';
+            }, 1500);
+        });
+
+        document.querySelectorAll('a[href^="#"]').forEach(function(anchor) {
+            anchor.addEventListener('click', function(e) {
+                var target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    e.preventDefault();
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    </script>
 
 </body>
 </html>
