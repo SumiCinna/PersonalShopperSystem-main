@@ -25,7 +25,6 @@ $order_stmt->execute();
 $order_result = $order_stmt->get_result();
 
 if ($order_result->num_rows === 0) {
-    // Order doesn't exist or isn't theirs
     header("Location: orders.php");
     exit();
 }
@@ -48,26 +47,56 @@ while ($row = $items_result->fetch_assoc()) {
 }
 $items_stmt->close();
 
+// --- CANCELLATION LOGIC ---
+// Philippine Time (UTC+8) 
+date_default_timezone_set('Asia/Manila');
+$now = time();
+$order_placed_time = strtotime($order['created_at']);
+$minutes_since_order = ($now - $order_placed_time) / 60;
+$within_window = $minutes_since_order <= 30;
+$minutes_remaining = max(0, 30 - floor($minutes_since_order));
+
+$cancellable_statuses = ['pending', 'payment_confirmed'];
+$status_allows_cancel = in_array($order['order_status'], $cancellable_statuses);
+
+$can_cancel = $within_window && $status_allows_cancel;
+
+// Reason why they can't cancel (for UI messaging)
+$cancel_denied_reason = '';
+if (!$can_cancel) {
+    if (!$status_allows_cancel) {
+        switch ($order['order_status']) {
+            case 'processing': $cancel_denied_reason = 'cancellation_denied_prep'; break;
+            case 'ready':      $cancel_denied_reason = 'cancellation_denied_ready'; break;
+            case 'completed':  $cancel_denied_reason = 'cancellation_denied_completed'; break;
+            case 'cancelled':  $cancel_denied_reason = 'already_cancelled'; break;
+            default:           $cancel_denied_reason = 'cancellation_denied_status'; break;
+        }
+    } elseif (!$within_window) {
+        $cancel_denied_reason = 'window_expired';
+    }
+}
+
 // Include the Customer Header
 $page_title = 'Order Details - ' . $order['tracking_no'];
 require_once '../../includes/customer_header.php'; 
 
-// Helper function for badges
 function getStatusBadge($status) {
     switch ($status) {
-        case 'pending': return '<span class="bg-yellow-100 text-yellow-800 text-sm font-bold px-4 py-1.5 rounded-full border border-yellow-200">Pending</span>';
-        case 'processing': return '<span class="bg-blue-100 text-blue-800 text-sm font-bold px-4 py-1.5 rounded-full border border-blue-200">Processing</span>';
-        case 'ready': return '<span class="bg-green-100 text-green-800 text-sm font-bold px-4 py-1.5 rounded-full border border-green-200 animate-pulse">Ready for Pickup</span>';
-        case 'completed': return '<span class="bg-gray-100 text-gray-800 text-sm font-bold px-4 py-1.5 rounded-full border border-gray-200">Completed</span>';
-        case 'cancelled': return '<span class="bg-red-100 text-red-800 text-sm font-bold px-4 py-1.5 rounded-full border border-red-200">Cancelled</span>';
-        default: return '<span class="bg-gray-100 text-gray-800 text-sm font-bold px-4 py-1.5 rounded-full">Unknown</span>';
+        case 'pending':             return '<span class="bg-yellow-100 text-yellow-800 text-sm font-bold px-4 py-1.5 rounded-full border border-yellow-200">Pending</span>';
+        case 'payment_confirmed':   return '<span class="bg-indigo-100 text-indigo-800 text-sm font-bold px-4 py-1.5 rounded-full border border-indigo-200">Payment Confirmed</span>';
+        case 'processing':          return '<span class="bg-blue-100 text-blue-800 text-sm font-bold px-4 py-1.5 rounded-full border border-blue-200">Being Prepared</span>';
+        case 'ready':               return '<span class="bg-green-100 text-green-800 text-sm font-bold px-4 py-1.5 rounded-full border border-green-200 animate-pulse">Ready for Pickup</span>';
+        case 'completed':           return '<span class="bg-gray-100 text-gray-800 text-sm font-bold px-4 py-1.5 rounded-full border border-gray-200">Completed</span>';
+        case 'cancelled':           return '<span class="bg-red-100 text-red-800 text-sm font-bold px-4 py-1.5 rounded-full border border-red-200">Cancelled</span>';
+        default:                    return '<span class="bg-gray-100 text-gray-800 text-sm font-bold px-4 py-1.5 rounded-full">Unknown</span>';
     }
 }
 ?>
 
 <main class="container mx-auto px-6 py-12 flex-grow bg-gray-50">
     <div class="max-w-5xl mx-auto">
-        
+
         <?php if (isset($_SESSION['success'])): ?>
             <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded shadow-sm font-bold">
                 <?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
@@ -94,14 +123,94 @@ function getStatusBadge($status) {
             </div>
             <div class="mt-4 md:mt-0 flex flex-col items-end gap-3">
                 <?php echo getStatusBadge($order['order_status']); ?>
-                
-                <?php if($order['order_status'] === 'pending'): ?>
+
+                <?php if ($can_cancel): ?>
+                    <!-- CANCELLATION ALLOWED: show button + countdown -->
                     <button onclick="openCancelModal()" class="text-sm text-red-500 hover:text-red-700 font-bold underline decoration-red-200 hover:decoration-red-700 transition">
                         Cancel Order
                     </button>
+                    <div class="flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+                        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>Cancel window closes in <strong id="cancelCountdown"></strong></span>
+                    </div>
+
+                <?php elseif ($cancel_denied_reason === 'window_expired'): ?>
+                    <!-- WINDOW EXPIRED -->
+                    <div class="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold px-3 py-2 rounded-lg max-w-xs text-right">
+                        <svg class="w-4 h-4 flex-shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>30-minute cancellation window has expired. Cancellation is no longer available.</span>
+                    </div>
+
+                <?php elseif ($cancel_denied_reason === 'cancellation_denied_prep'): ?>
+                    <!-- STAFF ALREADY PREPARING -->
+                    <div class="flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold px-3 py-2 rounded-lg max-w-xs text-right">
+                        <svg class="w-4 h-4 flex-shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        <span>Staff has already begun preparing your order. Cancellation is no longer allowed.</span>
+                    </div>
+
+                <?php elseif ($cancel_denied_reason === 'cancellation_denied_ready'): ?>
+                    <!-- READY FOR PICKUP -->
+                    <div class="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 text-xs font-semibold px-3 py-2 rounded-lg max-w-xs text-right">
+                        <svg class="w-4 h-4 flex-shrink-0 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        <span>Your order is ready for pickup. Head to the store!</span>
+                    </div>
+
+                <?php elseif ($cancel_denied_reason === 'cancellation_denied_completed'): ?>
+                    <!-- COMPLETED -->
+                    <div class="flex items-center gap-2 bg-gray-100 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg max-w-xs text-right">
+                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>This order has been picked up and completed.</span>
+                    </div>
+
+                <?php elseif ($cancel_denied_reason === 'already_cancelled'): ?>
+                    <!-- ALREADY CANCELLED - badge handles it, no extra msg needed -->
+
                 <?php endif; ?>
             </div>
         </div>
+
+        <!-- Cancellation Policy Info Box -->
+        <?php if ($order['order_status'] !== 'cancelled' && $order['order_status'] !== 'completed'): ?>
+        <div class="bg-white border border-gray-200 rounded-xl p-5 mb-8 shadow-sm">
+            <h3 class="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
+                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                Cancellation Policy
+            </h3>
+            <p class="text-xs text-gray-400 mb-3">The ✓ / ✗ below shows whether <strong>cancellation is allowed</strong> at each stage — not the order status.</p>
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                <?php
+                $policy_rows = [
+                    ['label' => 'Order Placed',       'status' => 'pending',     'allowed' => true,  'note' => 'Yes (within 30 mins)'],
+                    ['label' => 'Payment Confirmed',  'status' => 'payment_confirmed', 'allowed' => true, 'note' => 'Yes (within 30 mins)'],
+
+                    ['label' => 'Ready for Pickup',   'status' => 'ready',       'allowed' => false, 'note' => 'No'],
+                    ['label' => 'Picked Up / Done',   'status' => 'completed',   'allowed' => false, 'note' => 'No'],
+                ];
+                foreach ($policy_rows as $row):
+                    $is_current = ($order['order_status'] === $row['status']);
+                    $border = $is_current ? 'border-2 border-blue-400 bg-blue-50' : 'border border-gray-100 bg-gray-50';
+                ?>
+                <div class="<?php echo $border; ?> rounded-lg p-3 py-4 flex flex-col items-center gap-1.5 text-center">
+                    <span class="font-semibold text-gray-600"><?php echo $row['label']; ?></span>
+                    <?php if ($row['allowed']): ?>
+                        <span class="flex items-center gap-1 text-green-600 font-bold">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
+                            <?php echo $row['note']; ?>
+                        </span>
+                    <?php else: ?>
+                        <span class="flex items-center gap-1 text-red-500 font-bold">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            <?php echo $row['note']; ?>
+                        </span>
+                    <?php endif; ?>
+                    <?php if ($is_current): ?>
+                        <span class="text-blue-600 font-bold text-xs leading-tight">← Current Status of the Order</span>
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <div class="flex flex-col lg:flex-row gap-8">
             
@@ -120,13 +229,11 @@ function getStatusBadge($status) {
                                         <svg class="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                                     <?php endif; ?>
                                 </div>
-
                                 <div class="sm:ml-6 flex-1 text-center sm:text-left">
                                     <h3 class="text-base font-bold text-gray-800"><?php echo htmlspecialchars($item['name']); ?></h3>
                                     <p class="text-xs text-gray-500 mt-1"><?php echo floatval($item['unit_value']) . ' ' . htmlspecialchars($item['unit_measure']); ?></p>
                                     <p class="text-sm text-gray-600 mt-2">Qty: <span class="font-bold text-gray-900"><?php echo $item['quantity']; ?></span></p>
                                 </div>
-
                                 <div class="mt-4 sm:mt-0 sm:ml-6 text-right">
                                     <p class="text-sm text-gray-500">₱<?php echo number_format($item['price_at_checkout'], 2); ?> each</p>
                                     <p class="text-lg font-black text-blue-900 mt-1">₱<?php echo number_format($item['price_at_checkout'] * $item['quantity'], 2); ?></p>
@@ -141,7 +248,6 @@ function getStatusBadge($status) {
                 
                 <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
                     <h2 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Payment Summary</h2>
-                    
                     <div class="flex justify-between text-gray-600 mb-3">
                         <span>Subtotal</span>
                         <span>₱<?php echo number_format($order['total_amount'], 2); ?></span>
@@ -150,12 +256,10 @@ function getStatusBadge($status) {
                         <span>Convenience Fee</span>
                         <span>₱0.00</span>
                     </div>
-                    
                     <div class="flex justify-between text-xl font-black text-gray-900 mb-4">
                         <span>Grand Total</span>
                         <span class="text-blue-700">₱<?php echo number_format($order['total_amount'], 2); ?></span>
                     </div>
-
                     <div class="bg-gray-50 rounded p-4 border border-gray-200">
                         <p class="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Method</p>
                         <p class="font-semibold text-gray-800 capitalize mb-3">
@@ -185,6 +289,7 @@ function getStatusBadge($status) {
 </main>
 
 <!-- Cancel Confirmation Modal -->
+<?php if ($can_cancel): ?>
 <div id="cancelOrderModal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
     <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity backdrop-blur-sm"></div>
     <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
@@ -193,14 +298,17 @@ function getStatusBadge($status) {
                 <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
                     <div class="sm:flex sm:items-start">
                         <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                            <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+                            <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
                             </svg>
                         </div>
                         <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
                             <h3 class="text-base font-semibold leading-6 text-gray-900" id="modal-title">Cancel Order</h3>
-                            <div class="mt-2">
+                            <div class="mt-2 space-y-2">
                                 <p class="text-sm text-gray-500">Are you sure you want to cancel this order? This action cannot be undone and items will be returned to stock.</p>
+                                <p class="text-xs text-orange-600 font-semibold bg-orange-50 border border-orange-200 rounded p-2">
+                                    ⏱ You have <strong id="modalCountdown"></strong> left to cancel.
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -220,7 +328,37 @@ function getStatusBadge($status) {
 <script>
     function openCancelModal() { document.getElementById('cancelOrderModal').classList.remove('hidden'); }
     function closeCancelModal() { document.getElementById('cancelOrderModal').classList.add('hidden'); }
+
+    // Countdown: deadline = order placed time + 30 minutes
+    const deadline = new Date(<?php echo ($order_placed_time + 1800) * 1000; ?>);
+
+    function formatCountdown(ms) {
+        if (ms <= 0) return '0:00';
+        const totalSec = Math.floor(ms / 1000);
+        const min = Math.floor(totalSec / 60);
+        const sec = totalSec % 60;
+        return min + ':' + String(sec).padStart(2, '0');
+    }
+
+    function updateCountdown() {
+        const remaining = deadline - Date.now();
+        const text = formatCountdown(remaining);
+
+        const el = document.getElementById('cancelCountdown');
+        const modalEl = document.getElementById('modalCountdown');
+        if (el) el.textContent = text;
+        if (modalEl) modalEl.textContent = text;
+
+        if (remaining <= 0) {
+            // Window expired — reload page so PHP hides the cancel button
+            location.reload();
+        }
+    }
+
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
 </script>
+<?php endif; ?>
 
 <?php 
 require_once '../../includes/customer_footer.php'; 
