@@ -56,7 +56,8 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
                     </button>
                     <div id="staff-dropdown" class="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50" style="display:none;">
                         <a href="admin-login.php" class="block px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600 border-b border-slate-100">Admin Portal</a>
-                        <a href="cashier-login.php" class="block px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600">Cashier Terminal</a>
+                        <a href="cashier-login.php" class="block px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600 border-b border-slate-100">Cashier Terminal</a>
+                        <a href="inventory-login.php" class="block px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600">Inventory Management</a>
                     </div>
                 </div>
 

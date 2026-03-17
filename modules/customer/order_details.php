@@ -177,12 +177,10 @@ function getStatusBadge($status) {
                 Cancellation Policy
             </h3>
             <p class="text-xs text-gray-400 mb-3">The ✓ / ✗ below shows whether <strong>cancellation is allowed</strong> at each stage — not the order status.</p>
-            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+            <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
                 <?php
                 $policy_rows = [
                     ['label' => 'Order Placed',       'status' => 'pending',     'allowed' => true,  'note' => 'Yes (within 30 mins)'],
-                    ['label' => 'Payment Confirmed',  'status' => 'payment_confirmed', 'allowed' => true, 'note' => 'Yes (within 30 mins)'],
-
                     ['label' => 'Ready for Pickup',   'status' => 'ready',       'allowed' => false, 'note' => 'No'],
                     ['label' => 'Picked Up / Done',   'status' => 'completed',   'allowed' => false, 'note' => 'No'],
                 ];

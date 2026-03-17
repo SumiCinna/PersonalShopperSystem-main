@@ -4,8 +4,8 @@ session_start();
 require_once '../../config/config.php';
 
 // --- SECURITY CHECK ---
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../../admin-login.php");
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
+    header("Location: ../../inventory-login.php");
     exit();
 }
 
@@ -69,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Include the Header & Sidebar
 $page_title = 'Add New Product';
-require_once '../../includes/admin_header.php'; 
+require_once '../../includes/inventory_header.php'; 
 ?>
 
 <main class="flex-1 p-8">
@@ -122,9 +122,11 @@ require_once '../../includes/admin_header.php';
                                 <option value="Canned Goods">Canned Goods</option>
                                 <option value="Condiments">Condiments</option>
                                 <option value="Dairy">Dairy</option>
+                                <option value="Fresh Produce">Fresh Produce</option>
                                 <option value="Noodles">Noodles</option>
                                 <option value="Snacks">Snacks</option>
                                 <option value="Cooking Essentials">Cooking Essentials</option>
+                                <option value="Meat & Poultry">Meat &amp; Poultry</option>
                             </select>
                         </div>
                     </div>
@@ -211,4 +213,4 @@ require_once '../../includes/admin_header.php';
 
 </main>
 
-<?php require_once '../../includes/admin_footer.php'; ?>
+<?php require_once '../../includes/inventory_footer.php'; ?>

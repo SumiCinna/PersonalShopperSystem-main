@@ -67,6 +67,7 @@ require_once '../../includes/admin_header.php';
                         <label class="block text-sm font-bold text-slate-700 mb-1">Account Role</label>
                         <select name="role" id="role" class="w-full bg-white border border-slate-300 text-slate-900 rounded focus:ring-blue-500 focus:border-blue-500 block p-3 font-bold uppercase tracking-wider">
                             <option value="cashier">Cashier</option>
+                            <option value="inventory">Inventory</option>
                             <option value="admin">Admin</option>
                         </select>
                     </div>
@@ -121,7 +122,13 @@ require_once '../../includes/admin_header.php';
     }
 
     function updateUsername() {
-        const prefix = roleSelect.value === 'cashier' ? 'CAS' : 'ADM';
+        const roleMap = {
+            'cashier': 'CAS',
+            'inventory': 'INV',
+            'admin': 'ADM'
+        };
+        
+        const prefix = roleMap[roleSelect.value] || 'STAFF';
         
         // Grab the surname, remove spaces/special characters, and make it uppercase
         let surname = surnameInput.value.trim().toUpperCase().replace(/[^A-Z]/g, '');

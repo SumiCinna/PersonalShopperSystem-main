@@ -1,6 +1,7 @@
 <?php
 // modules/customer/checkout.php
 session_start();
+date_default_timezone_set('Asia/Manila'); // FIX: Use PH timezone
 require_once '../../config/config.php';
 
 // --- SECURITY CHECK ---
@@ -20,8 +21,8 @@ if (!isset($_POST['selected_cart_ids']) || empty($_POST['selected_cart_ids'])) {
 $selected_ids = array_map('intval', $_POST['selected_cart_ids']);
 $ids_string = implode(',', $selected_ids);
 
-// 2. Fetch ONLY SELECTED Cart Items
-$cart_query = "SELECT c.quantity, p.product_id, p.name, p.price, p.discount_price, p.image_url 
+// 2. Fetch ONLY SELECTED Cart Items (include category)
+$cart_query = "SELECT c.quantity, p.product_id, p.name, p.price, p.discount_price, p.image_url, p.category
                FROM cart c
                JOIN products p ON c.product_id = p.product_id
                WHERE c.user_id = ? AND c.cart_id IN ($ids_string)";
@@ -33,12 +34,17 @@ $result = $stmt->get_result();
 
 $cart_items = [];
 $total_amount = 0;
+$has_meat    = false;
+$has_fresh   = false;
 
 while ($row = $result->fetch_assoc()) {
     $final_price = ($row['discount_price'] > 0 && $row['discount_price'] < $row['price']) ? $row['discount_price'] : $row['price'];
     $row['final_price'] = $final_price;
     $cart_items[] = $row;
     $total_amount += ($final_price * $row['quantity']);
+
+    if ($row['category'] === 'Meat & Poultry') $has_meat  = true;
+    if ($row['category'] === 'Fresh Produce')  $has_fresh = true;
 }
 $stmt->close();
 
@@ -47,14 +53,78 @@ if (empty($cart_items)) {
     exit();
 }
 
-// --- DATE LIMIT: today + 3 days ---
-$min_date = date('Y-m-d');
-$max_date = date('Y-m-d', strtotime('+3 days'));
+// --- MEAT & POULTRY: check if 1-2 hr window falls within store hours (10:00-19:00) ---
+$meat_blocked = false;
+if ($has_meat) {
+    $now_minutes = (int)date('H') * 60 + (int)date('i');
+    $min_slot    = $now_minutes + 60;  // 1 hour from now
+    $max_slot    = $now_minutes + 120; // 2 hours from now
+    $store_open  = 10 * 60;
+    $store_close = 19 * 60;
+    $has_valid_slot = false;
+    for ($t = $store_open; $t <= $store_close; $t += 90) {
+        if ($t >= $min_slot && $t <= $max_slot) {
+            $has_valid_slot = true;
+            break;
+        }
+    }
+    if (!$has_valid_slot) $meat_blocked = true;
+}
+
+// --- DATE LIMITS based on category ---
+if ($has_meat) {
+    $min_date = date('Y-m-d');
+    $max_date = date('Y-m-d');
+} elseif ($has_fresh) {
+    $min_date = date('Y-m-d');
+    $max_date = date('Y-m-d', strtotime('+1 day'));
+} else {
+    $min_date = date('Y-m-d');
+    $max_date = date('Y-m-d', strtotime('+3 days'));
+}
+
+// Schedule notice message for UI
+$schedule_notice = '';
+if ($has_meat && $has_fresh) {
+    $schedule_notice = '🥩🥬 Your order contains <strong>Meat &amp; Poultry</strong> and <strong>Fresh Produce</strong>. Pickup must be <strong>today only</strong>, within <strong>1–2 hours</strong> from now (Meat &amp; Poultry rule applies).';
+} elseif ($has_meat) {
+    $schedule_notice = '🥩 Your order contains <strong>Meat &amp; Poultry</strong>. Pickup must be <strong>today only</strong>, within <strong>1–2 hours</strong> from the current time.';
+} elseif ($has_fresh) {
+    $schedule_notice = '🥬 Your order contains <strong>Fresh Produce</strong>. Pickup must be scheduled <strong>today or tomorrow</strong>.';
+}
 
 $page_title = 'Checkout';
 require_once '../../includes/customer_header.php'; 
 ?>
 
+<?php if ($meat_blocked): ?>
+<main class="container mx-auto px-6 py-12 flex-grow bg-gray-50">
+    <div class="max-w-xl mx-auto text-center">
+        <div class="bg-white border border-red-200 rounded-2xl shadow-sm p-10">
+            <div class="flex justify-center mb-4">
+                <div class="bg-red-100 rounded-full p-4">
+                    <svg class="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                    </svg>
+                </div>
+            </div>
+            <h2 class="text-2xl font-black text-gray-800 mb-2">Cannot Place Order Right Now</h2>
+            <p class="text-gray-500 text-sm mb-4">
+                Your cart contains <strong class="text-red-600">Meat &amp; Poultry</strong> which requires pickup within <strong>1&ndash;2 hours</strong> of ordering.
+            </p>
+            <p class="text-gray-500 text-sm mb-6">
+                The current time is <strong><?php echo date('h:i A'); ?></strong>. There are no available pickup slots within 1&ndash;2 hours during store hours <strong>(10:00 AM &ndash; 7:00 PM)</strong>.
+            </p>
+            <p class="text-sm text-blue-700 font-semibold mb-6">
+                💡 Please come back between <strong>8:00 AM &ndash; 5:00 PM</strong> to ensure a valid pickup slot is available.
+            </p>
+            <a href="cart.php" class="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl transition">
+                &larr; Back to Cart
+            </a>
+        </div>
+    </div>
+</main>
+<?php else: ?>
 <main class="container mx-auto px-6 py-12 flex-grow bg-gray-50">
     <div class="max-w-6xl mx-auto">
         <h1 class="text-3xl font-bold text-gray-800 mb-8 flex items-center">
@@ -65,6 +135,14 @@ require_once '../../includes/customer_header.php';
         <form id="checkoutForm" action="../../core/customer/process_checkout.php" method="POST" class="flex flex-col lg:flex-row gap-8">
             
             <div class="lg:w-2/3 space-y-6">
+
+                <!-- Category-based Schedule Notice -->
+                <?php if ($schedule_notice): ?>
+                <div class="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
+                    <svg class="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <p class="text-sm text-orange-800"><?php echo $schedule_notice; ?></p>
+                </div>
+                <?php endif; ?>
                 
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                     <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center">
@@ -73,7 +151,16 @@ require_once '../../includes/customer_header.php';
                     </h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">Date <span class="text-gray-400 font-normal">(within 3 days)</span></label>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">
+                                Date
+                                <?php if ($has_meat): ?>
+                                    <span class="text-orange-500 font-normal">(today only)</span>
+                                <?php elseif ($has_fresh): ?>
+                                    <span class="text-orange-500 font-normal">(today or tomorrow only)</span>
+                                <?php else: ?>
+                                    <span class="text-gray-400 font-normal">(within 3 days)</span>
+                                <?php endif; ?>
+                            </label>
                             <input type="date" name="pickup_date" id="pickup_date" required
                                 min="<?php echo $min_date; ?>"
                                 max="<?php echo $max_date; ?>"
@@ -81,7 +168,14 @@ require_once '../../includes/customer_header.php';
                                 class="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500">
                         </div>
                         <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-1">Time <span class="text-gray-400 font-normal">(10:00 AM – 7:00 PM)</span></label>
+                            <label class="block text-sm font-bold text-gray-700 mb-1">
+                                Time
+                                <?php if ($has_meat && !$has_fresh): ?>
+                                    <span class="text-orange-500 font-normal">(1–2 hrs from now)</span>
+                                <?php else: ?>
+                                    <span class="text-gray-400 font-normal">(10:00 AM – 7:00 PM)</span>
+                                <?php endif; ?>
+                            </label>
                             <select name="pickup_time" id="pickup_time" required class="w-full bg-gray-50 border border-gray-300 rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500">
                                 <option value="" disabled selected>Select a time slot</option>
                                 <?php
@@ -96,7 +190,7 @@ require_once '../../includes/customer_header.php';
                                 ?>
                             </select>
                             <p class="text-xs text-gray-400 mt-1">Slots available every 1 hr 30 mins</p>
-                            <p id="time_warning" class="hidden text-xs text-red-500 mt-1 font-semibold">⚠ No more slots available today. Please select a different date.</p>
+                            <p id="time_warning" class="hidden text-xs text-red-500 mt-1 font-semibold"></p>
                         </div>
                     </div>
                 </div>
@@ -136,14 +230,7 @@ require_once '../../includes/customer_header.php';
                     </div>
                 </div>
 
-                <!-- Notifications Info Banner -->
-                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-start gap-3">
-                    <svg class="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
-                    <div>
-                        <p class="text-sm font-bold text-yellow-800">Order Status Notifications</p>
-                        <p class="text-xs text-yellow-700 mt-1">You'll receive updates when your order is <span class="font-semibold">received</span>, <span class="font-semibold">being prepared</span>, and <span class="font-semibold">ready for pickup</span> — via in-app alerts.</p>
-                    </div>
-                </div>
+               
 
             </div>
 
@@ -187,7 +274,6 @@ require_once '../../includes/customer_header.php';
                         <input type="hidden" name="selected_cart_ids[]" value="<?php echo $id; ?>">
                     <?php endforeach; ?>
 
-                    <!-- Triggers modal instead of submitting directly -->
                     <button type="button" onclick="openConfirmModal()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-4 rounded-lg flex justify-center items-center transition shadow-md text-lg">
                         Confirm Order
                         <svg class="w-6 h-6 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
@@ -207,7 +293,6 @@ require_once '../../includes/customer_header.php';
     <div class="fixed inset-0 z-10 overflow-y-auto flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all">
 
-            <!-- Modal Header -->
             <div class="bg-gradient-to-r from-green-600 to-green-500 rounded-t-2xl px-6 py-5 flex items-center gap-3">
                 <div class="bg-white bg-opacity-20 rounded-full p-2">
                     <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -220,7 +305,6 @@ require_once '../../includes/customer_header.php';
 
             <div class="px-6 py-5 space-y-4">
 
-                <!-- Items -->
                 <div>
                     <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Items Ordered</p>
                     <div class="bg-gray-50 rounded-lg border border-gray-100 divide-y divide-gray-100 max-h-40 overflow-y-auto">
@@ -233,7 +317,6 @@ require_once '../../includes/customer_header.php';
                     </div>
                 </div>
 
-                <!-- Pickup Schedule -->
                 <div class="grid grid-cols-2 gap-3">
                     <div class="bg-blue-50 border border-blue-100 rounded-lg p-3">
                         <p class="text-xs text-blue-400 font-bold uppercase tracking-wide mb-1">Pickup Date</p>
@@ -245,7 +328,6 @@ require_once '../../includes/customer_header.php';
                     </div>
                 </div>
 
-                <!-- Payment -->
                 <div class="bg-green-50 border border-green-100 rounded-lg p-4 space-y-2">
                     <p class="text-xs text-green-500 font-bold uppercase tracking-wide mb-1">Payment Summary</p>
                     <div class="flex justify-between text-sm text-gray-700">
@@ -266,7 +348,6 @@ require_once '../../includes/customer_header.php';
                     </div>
                 </div>
 
-                <!-- Warning note -->
                 <div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
                     <svg class="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                     <p class="text-xs text-amber-700 font-semibold">Once confirmed, your GCash payment will be submitted for verification. Make sure the reference number is correct — <span class="font-black">this cannot be changed after placing the order.</span></p>
@@ -274,7 +355,6 @@ require_once '../../includes/customer_header.php';
 
             </div>
 
-            <!-- Modal Actions -->
             <div class="px-6 pb-6 flex gap-3">
                 <button type="button" onclick="closeConfirmModal()" class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition text-sm">
                     Go Back & Edit
@@ -290,6 +370,10 @@ require_once '../../includes/customer_header.php';
 </div>
 
 <script>
+    // --- PHP flags passed to JS ---
+    const hasMeat  = <?php echo $has_meat  ? 'true' : 'false'; ?>;
+    const hasFresh = <?php echo $has_fresh ? 'true' : 'false'; ?>;
+
     function updatePaymentBreakdown() {
         const total = parseFloat(document.querySelector('input[name="total_amount"]').value);
         const type = document.getElementById('payment_type').value;
@@ -315,12 +399,14 @@ require_once '../../includes/customer_header.php';
         refCount.style.color = this.value.length === 13 ? '#16a34a' : '#60a5fa';
     });
 
-    // --- TIME SLOT VALIDATION ---
+    // --- TIME SLOT FILTERING ---
     function filterTimeSlots() {
-        const dateInput = document.getElementById('pickup_date');
+        const dateInput  = document.getElementById('pickup_date');
         const timeSelect = document.getElementById('pickup_time');
+        const warningEl  = document.getElementById('time_warning');
         const selectedDate = dateInput.value;
 
+        // Build today string in Asia/Manila using the browser's local time
         const now = new Date();
         const todayStr = now.getFullYear() + '-'
             + String(now.getMonth() + 1).padStart(2, '0') + '-'
@@ -328,77 +414,97 @@ require_once '../../includes/customer_header.php';
 
         const isToday = (selectedDate === todayStr);
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
         let firstAvailable = null;
 
         Array.from(timeSelect.options).forEach(opt => {
-            if (!opt.value) return;
+            if (!opt.value) return; // skip placeholder
+
+            const [h, m] = opt.value.split(':').map(Number);
+            const slotMinutes = h * 60 + m;
+            let disabled = false;
+
             if (isToday) {
-                const [h, m] = opt.value.split(':').map(Number);
-                const isPast = (h * 60 + m) <= currentMinutes;
-                opt.disabled = isPast;
-                opt.style.color = isPast ? '#9ca3af' : '';
-                if (!isPast && !firstAvailable) firstAvailable = opt;
-            } else {
-                opt.disabled = false;
-                opt.style.color = '';
-                if (!firstAvailable) firstAvailable = opt;
+                if (hasMeat && !hasFresh) {
+                    // Meat & Poultry: slot must be 1–2 hours from NOW
+                    const minSlot = currentMinutes + 60;  // at least 1 hour ahead
+                    const maxSlot = currentMinutes + 120; // at most 2 hours ahead
+                    disabled = slotMinutes < minSlot || slotMinutes > maxSlot;
+                } else {
+                    // Normal / fresh produce not today: disable past slots
+                    disabled = slotMinutes <= currentMinutes;
+                }
             }
+            // If not today (fresh produce days), all slots enabled
+            opt.disabled = disabled;
+            opt.style.color = disabled ? '#9ca3af' : '';
+            if (!disabled && !firstAvailable) firstAvailable = opt;
         });
 
+        // If current selected slot is now disabled, auto-select first available
         const currentOpt = timeSelect.options[timeSelect.selectedIndex];
         if (!currentOpt || currentOpt.disabled || !currentOpt.value) {
             timeSelect.value = firstAvailable ? firstAvailable.value : '';
         }
 
-        const allDisabled = isToday && Array.from(timeSelect.options).filter(o => o.value).every(o => o.disabled);
-        const warningEl = document.getElementById('time_warning');
-        if (allDisabled) { timeSelect.value = ''; warningEl.classList.remove('hidden'); }
-        else { warningEl.classList.add('hidden'); }
+        // Check if ALL slots are disabled
+        const allDisabled = Array.from(timeSelect.options)
+            .filter(o => o.value)
+            .every(o => o.disabled);
+
+        if (allDisabled) {
+            timeSelect.value = '';
+            warningEl.classList.remove('hidden');
+            if (hasMeat && !hasFresh) {
+                warningEl.textContent = '⚠ No available slots for Meat & Poultry within 1–2 hrs from now. The window may have passed for today.';
+            } else {
+                warningEl.textContent = '⚠ No more slots available today. Please select a different date.';
+            }
+        } else {
+            warningEl.classList.add('hidden');
+            warningEl.textContent = '';
+        }
     }
 
     // --- CONFIRMATION MODAL ---
     function openConfirmModal() {
-        // Trigger native HTML5 validation first
         const form = document.getElementById('checkoutForm');
         if (!form.checkValidity()) {
             form.reportValidity();
             return;
         }
 
-        const total = parseFloat(document.querySelector('input[name="total_amount"]').value);
+        const total   = parseFloat(document.querySelector('input[name="total_amount"]').value);
         const payType = document.getElementById('payment_type').value;
         const dateVal = document.getElementById('pickup_date').value;
         const timeVal = document.getElementById('pickup_time').value;
         const refVal  = document.getElementById('online_reference').value;
 
         // Format date nicely
-        const dateObj = new Date(dateVal + 'T00:00:00');
+        const dateObj       = new Date(dateVal + 'T00:00:00');
         const dateFormatted = dateObj.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
         // Format time nicely
         const [h, m] = timeVal.split(':').map(Number);
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        const h12 = h % 12 || 12;
+        const ampm   = h >= 12 ? 'PM' : 'AM';
+        const h12    = h % 12 || 12;
         const timeFormatted = h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
 
-        // Payment type label
         const payLabels = { full: 'Full Payment', partial_50: '50% Downpayment', partial_30: '30% Downpayment' };
 
-        // Amounts
         let upfront = 0, balance = 0;
-        if (payType === 'full') { upfront = total; }
+        if (payType === 'full')         { upfront = total; }
         else if (payType === 'partial_50') { upfront = total * 0.5; balance = total - upfront; }
         else if (payType === 'partial_30') { upfront = total * 0.3; balance = total - upfront; }
 
         const fmt = v => '₱' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
-        // Populate modal
-        document.getElementById('modal_pickup_date').textContent = dateFormatted;
-        document.getElementById('modal_pickup_time').textContent = timeFormatted;
+        document.getElementById('modal_pickup_date').textContent  = dateFormatted;
+        document.getElementById('modal_pickup_time').textContent  = timeFormatted;
         document.getElementById('modal_payment_type').textContent = payLabels[payType];
-        document.getElementById('modal_gcash_ref').textContent = refVal;
-        document.getElementById('modal_pay_now').textContent = fmt(upfront);
-        document.getElementById('modal_balance').textContent = fmt(balance);
+        document.getElementById('modal_gcash_ref').textContent    = refVal;
+        document.getElementById('modal_pay_now').textContent      = fmt(upfront);
+        document.getElementById('modal_balance').textContent      = fmt(balance);
 
         document.getElementById('confirmOrderModal').classList.remove('hidden');
     }
@@ -411,11 +517,13 @@ require_once '../../includes/customer_header.php';
         document.getElementById('checkoutForm').submit();
     }
 
+    // Init on page load
     updatePaymentBreakdown();
     filterTimeSlots();
 </script>
 
-<?php 
-require_once '../../includes/customer_footer.php'; 
+
+<?php endif; ?>
+<?php require_once '../../includes/customer_footer.php'; 
 $conn->close(); 
 ?>

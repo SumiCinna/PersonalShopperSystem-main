@@ -32,16 +32,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($username) || strlen($username) < 3) {
         $errors[] = 'Username must be at least 3 characters.';
+    } elseif (strlen($username) > 20) {
+        $errors[] = 'Username must not exceed 20 characters.';
     } elseif (!preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
         $errors[] = 'Username can only contain letters, numbers, and underscores.';
     }
 
-    if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    if (empty($email)) {
+        $errors[] = 'Email address is required.';
+    } elseif (strlen($email) > 254) {
+        $errors[] = 'Email address must not exceed 254 characters.';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errors[] = 'Please enter a valid email address.';
+    } elseif (!preg_match('/@.*\.com$/', $email)) {
+        $errors[] = 'Email must contain "@" and end with ".com".';
     }
 
     if (strlen($password) < 8) {
         $errors[] = 'Password must be at least 8 characters.';
+    } elseif (strlen($password) > 20) {
+        $errors[] = 'Password must not exceed 20 characters.';
     } elseif (!preg_match('/[A-Z]/', $password)) {
         $errors[] = 'Password must contain at least one uppercase letter.';
     } elseif (!preg_match('/[a-z]/', $password)) {
@@ -54,15 +64,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Passwords do not match.';
     }
 
-    if (empty($firstname)) $errors[] = 'First name is required.';
-    if (empty($surname))   $errors[] = 'Surname is required.';
-
-    if (empty($mobile) || !preg_match('/^[0-9+\-\s]{7,15}$/', $mobile)) {
-        $errors[] = 'Please enter a valid mobile number.';
+    if (empty($firstname)) {
+        $errors[] = 'First name is required.';
+    } elseif (strlen($firstname) > 50) {
+        $errors[] = 'First name must not exceed 50 characters.';
     }
 
-    if (empty($region) || empty($province) || empty($city) || empty($barangay)) {
-        $errors[] = 'Please fill in all required address fields.';
+    if (strlen($middlename) > 50) {
+        $errors[] = 'Middle name must not exceed 50 characters.';
+    }
+
+    if (empty($surname)) {
+        $errors[] = 'Surname is required.';
+    } elseif (strlen($surname) > 50) {
+        $errors[] = 'Surname must not exceed 50 characters.';
+    }
+
+    if (empty($mobile) || !preg_match('/^09\d{9}$/', $mobile)) {
+        $errors[] = 'Please enter a valid mobile number (09xx xxx xxxx).';
+    }
+
+    if (empty($region) || strlen($region) > 50) {
+        $errors[] = 'Please enter a valid region (max 50 characters).';
+    }
+    if (empty($province) || strlen($province) > 50) {
+        $errors[] = 'Please enter a valid province (max 50 characters).';
+    }
+    if (empty($city) || strlen($city) > 50) {
+        $errors[] = 'Please enter a valid city (max 50 characters).';
+    }
+    if (empty($barangay) || strlen($barangay) > 50) {
+        $errors[] = 'Please enter a valid barangay (max 50 characters).';
+    }
+
+    if (strlen($block_no) > 20 && !empty($block_no)) {
+        $errors[] = 'Block number must not exceed 20 characters.';
+    }
+    if (strlen($lot_no) > 20 && !empty($lot_no)) {
+        $errors[] = 'Lot number must not exceed 20 characters.';
+    }
+    if (!empty($postal) && !preg_match('/^\d{4}$/', $postal)) {
+        $errors[] = 'Postal code must be exactly 4 digits.';
     }
 
     if (!$terms) {
@@ -87,6 +129,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'Email address is already registered.';
         }
         $stmtE->close();
+
+        $stmtM = $conn->prepare('SELECT user_id FROM user_profiles WHERE mobile = ?');
+        $stmtM->bind_param('s', $mobile);
+        $stmtM->execute();
+        $stmtM->store_result();
+        if ($stmtM->num_rows > 0) {
+            $errors[] = 'Mobile number is already registered.';
+        }
+        $stmtM->close();
     }
 
     if (empty($errors)) {
@@ -273,7 +324,9 @@ body {
   position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
   background: none; border: none; cursor: pointer; color: var(--muted);
   font-size: .95rem; padding: 0; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
 }
+.pw-toggle svg { width: 18px; height: 18px; }
 
 .strength-bar { display: flex; gap: 4px; margin-top: 7px; }
 .strength-bar span { flex: 1; height: 3px; border-radius: 3px; background: var(--border); transition: background .3s; }
@@ -378,19 +431,19 @@ body {
         <div class="panel-title">Create your account</div>
         <div class="field">
           <label>Username <span class="req">*</span></label>
-          <input type="text" id="username" autocomplete="username" placeholder="e.g. john_doe">
+          <input type="text" id="username" autocomplete="username" placeholder="e.g. john_doe" maxlength="20">
           <div class="err-msg" id="err-username"></div>
         </div>
         <div class="field">
           <label>Email Address <span class="req">*</span></label>
-          <input type="email" id="email" autocomplete="email" placeholder="you@example.com">
+          <input type="email" id="email" autocomplete="email" placeholder="you@example.com" maxlength="254">
           <div class="err-msg" id="err-email"></div>
         </div>
         <div class="field">
           <label>Password <span class="req">*</span></label>
           <div class="pw-wrap">
-            <input type="password" id="password" autocomplete="new-password" placeholder="Min. 8 characters">
-            <button type="button" class="pw-toggle" onclick="togglePw('password',this)">👁</button>
+            <input type="password" id="password" autocomplete="new-password" placeholder="8-20 characters" maxlength="20">
+            <button type="button" class="pw-toggle" onclick="togglePw('password',this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
           </div>
           <div class="strength-bar">
             <span id="sb1"></span><span id="sb2"></span><span id="sb3"></span><span id="sb4"></span>
@@ -401,8 +454,8 @@ body {
         <div class="field">
           <label>Confirm Password <span class="req">*</span></label>
           <div class="pw-wrap">
-            <input type="password" id="confirm_password" autocomplete="new-password" placeholder="Re-enter your password">
-            <button type="button" class="pw-toggle" onclick="togglePw('confirm_password',this)">👁</button>
+            <input type="password" id="confirm_password" autocomplete="new-password" placeholder="Re-enter your password" maxlength="20">
+            <button type="button" class="pw-toggle" onclick="togglePw('confirm_password',this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
           </div>
           <div class="err-msg" id="err-confirm"></div>
         </div>
@@ -416,18 +469,18 @@ body {
         <div class="form-row">
           <div class="field">
             <label>First Name <span class="req">*</span></label>
-            <input type="text" id="firstname" placeholder="First name">
+            <input type="text" id="firstname" placeholder="First name" maxlength="50">
             <div class="err-msg" id="err-firstname"></div>
           </div>
           <div class="field">
             <label>Middle Name</label>
-            <input type="text" id="middlename" placeholder="Optional">
+            <input type="text" id="middlename" placeholder="Optional" maxlength="50">
           </div>
         </div>
         <div class="form-row">
           <div class="field">
             <label>Surname <span class="req">*</span></label>
-            <input type="text" id="surname" placeholder="Last name">
+            <input type="text" id="surname" placeholder="Last name" maxlength="50">
             <div class="err-msg" id="err-surname"></div>
           </div>
           <div class="field" style="max-width:110px;">
@@ -441,7 +494,7 @@ body {
         </div>
         <div class="field">
           <label>Mobile Number <span class="req">*</span></label>
-          <input type="tel" id="mobile" placeholder="+63 9XX XXX XXXX">
+          <input type="tel" id="mobile" placeholder="09xx xxx xxxx" maxlength="11" inputmode="numeric">
           <div class="err-msg" id="err-mobile"></div>
         </div>
         <div class="btn-row">
@@ -455,47 +508,54 @@ body {
         <div class="form-row">
           <div class="field">
             <label>Label</label>
-            <select id="address_label">
+            <select id="address_label" onchange="handleLabelChange()">
               <option value="Home">Home</option>
               <option value="Work">Work</option>
               <option value="Other">Other</option>
             </select>
           </div>
-          <div class="field">
-            <label>Region <span class="req">*</span></label>
-            <input type="text" id="region" placeholder="e.g. NCR">
-            <div class="err-msg" id="err-region"></div>
+          <div class="field" id="custom-label-field" style="display: none;">
+            <label>Custom Label <span class="req">*</span></label>
+            <input type="text" id="custom_label" placeholder="Enter label" maxlength="50">
+            <div class="err-msg" id="err-custom_label"></div>
           </div>
         </div>
         <div class="form-row">
           <div class="field">
-            <label>Province <span class="req">*</span></label>
-            <input type="text" id="province" placeholder="e.g. Metro Manila">
-            <div class="err-msg" id="err-province"></div>
+            <label>Region <span class="req">*</span></label>
+            <input type="text" id="region" placeholder="e.g. NCR" maxlength="50">
+            <div class="err-msg" id="err-region"></div>
           </div>
           <div class="field">
-            <label>City <span class="req">*</span></label>
-            <input type="text" id="city" placeholder="e.g. Caloocan City">
-            <div class="err-msg" id="err-city"></div>
+            <label>Province <span class="req">*</span></label>
+            <input type="text" id="province" placeholder="e.g. Metro Manila" maxlength="50">
+            <div class="err-msg" id="err-province"></div>
           </div>
         </div>
-        <div class="field">
-          <label>Barangay <span class="req">*</span></label>
-          <input type="text" id="barangay" placeholder="Barangay name or number">
-          <div class="err-msg" id="err-barangay"></div>
+        <div class="form-row">
+          <div class="field">
+            <label>City <span class="req">*</span></label>
+            <input type="text" id="city" placeholder="e.g. Caloocan City" maxlength="50">
+            <div class="err-msg" id="err-city"></div>
+          </div>
+          <div class="field">
+            <label>Barangay <span class="req">*</span></label>
+            <input type="text" id="barangay" placeholder="Barangay name or number" maxlength="50">
+            <div class="err-msg" id="err-barangay"></div>
+          </div>
         </div>
         <div class="form-row">
           <div class="field">
             <label>Block No.</label>
-            <input type="text" id="block_no" placeholder="Block 1">
+            <input type="text" id="block_no" placeholder="Block 1" maxlength="20">
           </div>
           <div class="field">
             <label>Lot No.</label>
-            <input type="text" id="lot_no" placeholder="Lot 24">
+            <input type="text" id="lot_no" placeholder="Lot 24" maxlength="20">
           </div>
           <div class="field">
             <label>Postal Code</label>
-            <input type="text" id="postal_code" placeholder="1428" maxlength="10">
+            <input type="text" id="postal_code" placeholder="1428" maxlength="4" inputmode="numeric">
           </div>
         </div>
         <div class="btn-row">
@@ -531,7 +591,7 @@ body {
     </div>
 
     <div class="login-link" id="login-link-row">
-      Already have an account? <a href="logout.php">Sign in</a>
+      Already have an account? <a href="login.php">Sign in</a>
     </div>
   </div>
 </div>
@@ -540,6 +600,20 @@ body {
 var currentStep = 1;
 
 function v(id) { return document.getElementById(id); }
+
+function handleLabelChange() {
+  var labelVal = v('address_label').value;
+  var customLabelField = v('custom-label-field');
+  var customLabelInput = v('custom_label');
+  if (labelVal === 'Other') {
+    customLabelField.style.display = 'block';
+    customLabelInput.focus();
+  } else {
+    customLabelField.style.display = 'none';
+    customLabelInput.value = '';
+    clearErr('custom_label');
+  }
+}
 
 function showErr(id, msg) {
   var el = v('err-' + id);
@@ -554,7 +628,7 @@ function clearErr(id) { showErr(id, ''); }
 function togglePw(id, btn) {
   var inp = v(id);
   inp.type = inp.type === 'password' ? 'text' : 'password';
-  btn.textContent = inp.type === 'password' ? '👁' : '🙈';
+  btn.innerHTML = inp.type === 'password' ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
 }
 
 v('password').addEventListener('input', function() {
@@ -573,6 +647,22 @@ v('password').addEventListener('input', function() {
   lbl.style.color = cols[score];
 });
 
+v('mobile').addEventListener('input', function() {
+  var val = this.value.replace(/\D/g, '');
+  if (val.length > 11) {
+    val = val.substring(0, 11);
+  }
+  this.value = val;
+});
+
+v('postal_code').addEventListener('input', function() {
+  var val = this.value.replace(/\D/g, '');
+  if (val.length > 4) {
+    val = val.substring(0, 4);
+  }
+  this.value = val;
+});
+
 function validateStep(n) {
   if (n === 1) {
     var ok = true;
@@ -583,11 +673,15 @@ function validateStep(n) {
     ['username','email','password','confirm'].forEach(clearErr);
 
     if (u.length < 3) { showErr('username', 'Username must be at least 3 characters.'); ok = false; }
+    else if (u.length > 20) { showErr('username', 'Username must not exceed 20 characters.'); ok = false; }
     else if (!/^[a-zA-Z0-9_]+$/.test(u)) { showErr('username', 'Letters, numbers and underscores only.'); ok = false; }
 
-    if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { showErr('email', 'Enter a valid email address.'); ok = false; }
+    if (!e) { showErr('email', 'Email address is required.'); ok = false; }
+    else if (e.length > 254) { showErr('email', 'Email must not exceed 254 characters.'); ok = false; }
+    else if (!/^[^\s@]+@[^\s@]+\.com$/.test(e)) { showErr('email', 'Enter valid email (must end with .com).'); ok = false; }
 
     if (p.length < 8) { showErr('password', 'At least 8 characters required.'); ok = false; }
+    else if (p.length > 20) { showErr('password', 'Password must not exceed 20 characters.'); ok = false; }
     else if (!/[A-Z]/.test(p)) { showErr('password', 'Needs at least one uppercase letter (A-Z).'); ok = false; }
     else if (!/[a-z]/.test(p)) { showErr('password', 'Needs at least one lowercase letter (a-z).'); ok = false; }
     else if (!/[0-9]/.test(p)) { showErr('password', 'Needs at least one number (0-9).'); ok = false; }
@@ -598,18 +692,45 @@ function validateStep(n) {
   if (n === 2) {
     var ok = true;
     ['firstname','surname','mobile'].forEach(clearErr);
-    if (!v('firstname').value.trim()) { showErr('firstname', 'First name is required.'); ok = false; }
-    if (!v('surname').value.trim())   { showErr('surname',   'Surname is required.'); ok = false; }
+    var fn = v('firstname').value.trim();
+    var sn = v('surname').value.trim();
     var m = v('mobile').value.trim();
-    if (!m || !/^[0-9+\-\s]{7,15}$/.test(m)) { showErr('mobile', 'Enter a valid mobile number.'); ok = false; }
+
+    if (!fn) { showErr('firstname', 'First name is required.'); ok = false; }
+    else if (fn.length > 50) { showErr('firstname', 'First name must not exceed 50 characters.'); ok = false; }
+
+    if (!sn) { showErr('surname', 'Surname is required.'); ok = false; }
+    else if (sn.length > 50) { showErr('surname', 'Surname must not exceed 50 characters.'); ok = false; }
+
+    if (!m || !/^09\d{9}$/.test(m)) { showErr('mobile', 'Enter valid mobile (09xx xxx xxxx).'); ok = false; }
     return ok;
   }
   if (n === 3) {
     var ok = true;
+    var labelVal = v('address_label').value;
+    clearErr('custom_label');
     ['region','province','city','barangay'].forEach(function(f) {
       clearErr(f);
-      if (!v(f).value.trim()) { showErr(f, 'This field is required.'); ok = false; }
     });
+
+    if (labelVal === 'Other') {
+      var customLabel = v('custom_label').value.trim();
+      if (!customLabel) { showErr('custom_label', 'Custom label is required.'); ok = false; }
+      else if (customLabel.length > 50) { showErr('custom_label', 'Custom label must not exceed 50 characters.'); ok = false; }
+    }
+
+    if (!v('region').value.trim()) { showErr('region', 'Region is required.'); ok = false; }
+    else if (v('region').value.length > 50) { showErr('region', 'Region must not exceed 50 characters.'); ok = false; }
+
+    if (!v('province').value.trim()) { showErr('province', 'Province is required.'); ok = false; }
+    else if (v('province').value.length > 50) { showErr('province', 'Province must not exceed 50 characters.'); ok = false; }
+
+    if (!v('city').value.trim()) { showErr('city', 'City is required.'); ok = false; }
+    else if (v('city').value.length > 50) { showErr('city', 'City must not exceed 50 characters.'); ok = false; }
+
+    if (!v('barangay').value.trim()) { showErr('barangay', 'Barangay is required.'); ok = false; }
+    else if (v('barangay').value.length > 50) { showErr('barangay', 'Barangay must not exceed 50 characters.'); ok = false; }
+
     return ok;
   }
   return true;
@@ -647,12 +768,14 @@ function buildReview() {
   var sn = v('surname').value.trim();
   var sf = v('suffix').value;
   var fullname = [fn, mn, sn, sf].filter(Boolean).join(' ');
+  var labelVal = v('address_label').value;
+  var displayLabel = labelVal === 'Other' ? v('custom_label').value : labelVal;
   var rows = [
     ['Username',       v('username').value],
     ['Email',          v('email').value],
     ['Full Name',      fullname],
     ['Mobile',         v('mobile').value],
-    ['Address Label',  v('address_label').value],
+    ['Address Label',  displayLabel],
     ['Region',         v('region').value],
     ['Province',       v('province').value],
     ['City',           v('city').value],
@@ -689,7 +812,8 @@ function submitForm() {
   fd.append('surname',          v('surname').value.trim());
   fd.append('suffix',           v('suffix').value);
   fd.append('mobile',           v('mobile').value.trim());
-  fd.append('address_label',    v('address_label').value);
+  var labelVal = v('address_label').value;
+  fd.append('address_label',    labelVal === 'Other' ? v('custom_label').value.trim() : labelVal);
   fd.append('region',           v('region').value.trim());
   fd.append('province',         v('province').value.trim());
   fd.append('city',             v('city').value.trim());

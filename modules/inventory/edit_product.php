@@ -4,8 +4,8 @@ session_start();
 require_once '../../config/config.php';
 
 // --- SECURITY CHECK ---
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../../admin-login.php");
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
+    header("Location: ../../inventory-login.php");
     exit();
 }
 
@@ -91,7 +91,7 @@ $fetch_stmt->close();
 
 // Include the Header & Sidebar
 $page_title = 'Edit Product: ' . htmlspecialchars($product['name']);
-require_once '../../includes/admin_header.php'; 
+require_once '../../includes/inventory_header.php'; 
 ?>
 
 <main class="flex-1 p-8">
@@ -147,7 +147,7 @@ require_once '../../includes/admin_header.php';
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Category *</label>
                             <select name="category" required class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
                                 <?php 
-                                $categories = ['Beverages', 'Canned Goods', 'Condiments', 'Dairy', 'Noodles', 'Snacks', 'Cooking Essentials'];
+                                $categories = ['Beverages', 'Canned Goods', 'Condiments', 'Dairy', 'Fresh Produce', 'Noodles', 'Snacks', 'Cooking Essentials', 'Meat & Poultry'];
                                 foreach ($categories as $cat) {
                                     $selected = ($product['category'] === $cat) ? 'selected' : '';
                                     echo "<option value=\"$cat\" $selected>$cat</option>";
@@ -239,4 +239,4 @@ require_once '../../includes/admin_header.php';
 
 </main>
 
-<?php require_once '../../includes/admin_footer.php'; ?>
+<?php require_once '../../includes/inventory_footer.php'; ?>

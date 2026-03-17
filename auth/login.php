@@ -15,6 +15,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: ../admin-login.php");
         } elseif ($role === 'cashier') {
             header("Location: ../cashier-login.php");
+        } elseif ($role === 'inventory') {
+            header("Location: ../inventory-login.php");
         } else {
             header("Location: ../customer-login.php"); 
         }
@@ -56,6 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header("Location: ../modules/admin/dashboard.php");
             } elseif ($user['role'] === 'cashier') {
                 header("Location: ../modules/cashier/dashboard.php");
+            } elseif ($user['role'] === 'inventory') {
+                header("Location: ../modules/inventory/dashboard.php");
             } else {
                 header("Location: ../modules/customer/home.php");
             }

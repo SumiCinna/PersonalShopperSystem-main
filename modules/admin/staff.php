@@ -15,7 +15,7 @@ $query = "SELECT
             CONCAT_WS(' ', up.firstname, up.middlename, up.surname) AS full_name
           FROM users u
           LEFT JOIN user_profiles up ON u.user_id = up.user_id
-          WHERE u.role IN ('admin', 'cashier') 
+          WHERE u.role IN ('admin', 'cashier', 'inventory') 
           ORDER BY u.role ASC, u.username ASC";
 $result = $conn->query($query);
 
@@ -67,8 +67,10 @@ require_once '../../includes/admin_header.php';
                         <td class="p-4">
                             <?php if ($staff['role'] === 'admin'): ?>
                                 <span class="bg-purple-100 text-purple-800 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider border border-purple-200">Admin</span>
+                            <?php elseif ($staff['role'] === 'inventory'): ?>
+                                <span class="bg-blue-100 text-blue-800 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider border border-blue-200">Inventory</span>
                             <?php else: ?>
-                                <span class="bg-blue-100 text-blue-800 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider border border-blue-200">Cashier</span>
+                                <span class="bg-cyan-100 text-cyan-800 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider border border-cyan-200">Cashier</span>
                             <?php endif; ?>
                         </td>
                         <td class="p-4">

@@ -1,12 +1,12 @@
 <?php
-// modules/admin/products.php
+// modules/inventory/products.php
 session_start();
 require_once '../../config/config.php';
 
 // --- SECURITY CHECK ---
-// If not logged in OR not an admin, kick them out to the login page
-if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    header("Location: ../../admin-login.php");
+// If not logged in OR not an inventory manager, kick them out to the login page
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
+    header("Location: ../../inventory-login.php");
     exit();
 }
 
@@ -15,14 +15,14 @@ $query = "SELECT product_id, name, brand, category, sku, cost_price, price, disc
 $result = $conn->query($query);
 
 // 1. Include the global header (HTML head, Tailwind CSS)
-$page_title = 'Manage Inventory - Admin Dashboard';
-require_once '../../includes/admin_header.php'; 
+$page_title = 'Manage Products - Inventory Management';
+require_once '../../includes/inventory_header.php'; 
 ?>
 
 <main class="flex-1 p-8 overflow-y-auto">
     <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
-            <h1 class="text-3xl font-bold text-gray-800">Manage Inventory</h1>
+            <h1 class="text-3xl font-bold text-gray-800">Manage Products</h1>
             <p class="text-gray-500 text-sm mt-1">View and manage your product catalog</p>
         </div>
         
@@ -118,7 +118,7 @@ require_once '../../includes/admin_header.php';
                                     <td colspan="8" class="p-12 text-center text-gray-500">
                                         <svg class="w-12 h-12 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
                                         <p class="text-lg">No products found in the inventory.</p>
-                                        <p class="text-sm mt-1">Click "Add New Product" to get started!</p>
+                                        <p class="text-sm mt-1">Click "Add Product" to get started!</p>
                                     </td>
                                 </tr>
                             <?php endif; ?>
@@ -316,7 +316,7 @@ require_once '../../includes/admin_header.php';
 
     function confirmDelete() {
         if (productToDeleteId) {
-            fetch('../../core/admin/delete_product.php', {
+            fetch('../../core/inventory/delete_product.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: productToDeleteId })
@@ -371,5 +371,5 @@ require_once '../../includes/admin_header.php';
     }
 </script>
         
-        <?php require_once '../../includes/admin_footer.php'; ?>
+        <?php require_once '../../includes/inventory_footer.php'; ?>
 <?php $conn->close(); ?>
