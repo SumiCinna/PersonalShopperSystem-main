@@ -1,183 +1,182 @@
 <?php
-// core/customer/process_checkout.php
 session_start();
+date_default_timezone_set('Asia/Manila');
 require_once '../../config/config.php';
 
-// --- SECURITY CHECK ---
+define('PM_SECRET_KEY', 'sk_test_bg7ic4jq6oGSkDPeU5xeQFn5');
+define('PM_BASE_URL',   'https://api.paymongo.com/v1');
+
+function pm_request(string $endpoint, string $method = 'GET', array $payload = []): array {
+    $ch = curl_init(PM_BASE_URL . $endpoint);
+    $opts = [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Authorization: Basic ' . base64_encode(PM_SECRET_KEY . ':'),
+        ],
+    ];
+    if ($method === 'POST') {
+        $opts[CURLOPT_POST]       = true;
+        $opts[CURLOPT_POSTFIELDS] = json_encode($payload);
+    }
+    curl_setopt_array($ch, $opts);
+    $raw = curl_exec($ch);
+    curl_close($ch);
+    return json_decode($raw, true) ?? [];
+}
+
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
     header("Location: ../../index.php");
     exit();
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: ../../modules/customer/cart.php");
-    exit();
-}
-
-if (!isset($_POST['selected_cart_ids']) || empty($_POST['selected_cart_ids'])) {
-    $_SESSION['error'] = "No items were selected for checkout. Please try again.";
-    header("Location: ../../modules/customer/cart.php");
-    exit();
-}
-
 $user_id = $_SESSION['user_id'];
-$selected_ids = array_map('intval', $_POST['selected_cart_ids']);
-$ids_string = implode(',', $selected_ids);
 
-// 1. Fetch ONLY SELECTED cart items one last time
-$cart_query = "SELECT c.quantity, p.product_id, p.price, p.discount_price, p.stock, p.name 
-               FROM cart c 
-               JOIN products p ON c.product_id = p.product_id 
-               WHERE c.user_id = ? AND c.cart_id IN ($ids_string)";
-$stmt = $conn->prepare($cart_query);
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$result = $stmt->get_result();
-
-$cart_items = [];
-$total_amount = 0;
-
-while ($row = $result->fetch_assoc()) {
-    // SECURITY: What if someone bought the last item while this user was on the checkout page?
-    if ($row['stock'] < $row['quantity']) {
-        $_SESSION['error'] = "Sorry, " . $row['name'] . " is no longer in stock in that quantity.";
+foreach (['pickup_date', 'pickup_time', 'payment_type', 'selected_cart_ids'] as $f) {
+    if (empty($_POST[$f])) {
         header("Location: ../../modules/customer/cart.php");
         exit();
     }
-    
-    // Use discount price if available
-    $final_price = ($row['discount_price'] > 0 && $row['discount_price'] < $row['price']) ? $row['discount_price'] : $row['price'];
-    $row['price'] = $final_price; // Overwrite price with final price for order_items table
-    $cart_items[] = $row;
-    $total_amount += ($final_price * $row['quantity']);
 }
-$stmt->close();
+
+$pickup_date  = htmlspecialchars(trim($_POST['pickup_date']));
+$pickup_time  = htmlspecialchars(trim($_POST['pickup_time']));
+$payment_type = $_POST['payment_type'];
+$selected_ids = array_map('intval', $_POST['selected_cart_ids']);
+$ids_string   = implode(',', $selected_ids);
+
+if (!in_array($payment_type, ['full', 'partial_50', 'partial_30'])) {
+    header("Location: ../../modules/customer/cart.php");
+    exit();
+}
+
+// ─── Verify cart items ─────────────────────────────────────────────────────────
+$cart_items = [];
+$result = $conn->query("
+    SELECT c.cart_id, c.quantity, p.product_id, p.name, p.price, p.discount_price
+    FROM cart c
+    JOIN products p ON c.product_id = p.product_id
+    WHERE c.user_id = $user_id AND c.cart_id IN ($ids_string)
+");
+while ($row = $result->fetch_assoc()) {
+    $row['final_price'] = ($row['discount_price'] > 0 && $row['discount_price'] < $row['price'])
+        ? $row['discount_price'] : $row['price'];
+    $cart_items[] = $row;
+}
 
 if (empty($cart_items)) {
-    header("Location: ../../modules/customer/home.php");
-    exit();
-}
-
-// Generate a Unique Tracking Number (e.g., ORD-20260224-4A8F)
-$tracking_no = 'ORD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
-
-if (empty($_POST['pickup_date']) || empty($_POST['pickup_time'])) {
-    $_SESSION['error'] = "Please select a pickup date and time.";
     header("Location: ../../modules/customer/cart.php");
     exit();
 }
 
-// 1. Gather all inputs
-$pickup_datetime = $_POST['pickup_date'] . ' ' . $_POST['pickup_time'] . ':00';
-$payment_method = 'gcash'; // Enforce online payment
-
-// 2. The Secure Math Engine
-$selected_type = $_POST['payment_type'];
-$online_reference = trim($_POST['online_reference']);
-
-if ($selected_type === 'partial_50') {
-    $upfront_payment = $total_amount * 0.50; // Server strictly calculates 50%
-    $balance_due = $total_amount - $upfront_payment;
-    $payment_type = 'partial';
-} elseif ($selected_type === 'partial_30') {
-    $upfront_payment = $total_amount * 0.30; // Server strictly calculates 30%
-    $balance_due = $total_amount - $upfront_payment;
-    $payment_type = 'partial';
-} else {
-    $upfront_payment = $total_amount; // Paid full upfront
-    $balance_due = 0.00; // Nothing owed at counter
-    $payment_type = 'full';
+// ─── ALWAYS recalculate total server-side from actual DB items ─────────────────
+// Never trust $_POST['total_amount'] — recalculate from what was actually fetched
+// so that order total always matches the items inserted into order_items.
+$total_amount = 0;
+foreach ($cart_items as $item) {
+    $total_amount += $item['final_price'] * $item['quantity'];
 }
+$total_amount = round($total_amount, 2);
 
-// ==========================================
-// START THE DATABASE TRANSACTION
-// ==========================================
-$conn->begin_transaction();
+// ─── Payment split ─────────────────────────────────────────────────────────────
+$amount_to_pay = match($payment_type) {
+    'partial_50' => round($total_amount * 0.5, 2),
+    'partial_30' => round($total_amount * 0.3, 2),
+    default      => round($total_amount, 2),
+};
+$balance_due = round($total_amount - $amount_to_pay, 2);
 
-try {
-    // 3. Insert into the upgraded Orders table
-    $order_query = "INSERT INTO orders (user_id, tracking_no, total_amount, payment_method, order_status, payment_status, pickup_datetime, payment_type, upfront_payment, balance_due, online_reference) 
-                    VALUES (?, ?, ?, ?, 'pending', 'pending', ?, ?, ?, ?, ?)";
-                    
-    $order_stmt = $conn->prepare($order_query);
-    if (!$order_stmt) {
-        throw new Exception("Database Error (Orders): " . $conn->error);
-    }
-    $order_stmt->bind_param("isdsssdds", $user_id, $tracking_no, $total_amount, $payment_method, $pickup_datetime, $payment_type, $upfront_payment, $balance_due, $online_reference);
-    
-    if (!$order_stmt->execute()) {
-        throw new Exception("Order Insert Failed: " . $order_stmt->error);
-    }
-    
-    $order_id = $conn->insert_id;
-    $order_stmt->close();
+// ─── Fetch user info ───────────────────────────────────────────────────────────
+$stmt = $conn->prepare("SELECT * FROM users WHERE user_id = ?");
+if (!$stmt) die('Users prepare failed: ' . $conn->error);
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$user_info = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
-    // STEP 2: Loop through cart items and add them to `order_items`, then deduct stock
-    $item_query = "INSERT INTO order_items (order_id, product_id, quantity, price_at_checkout) VALUES (?, ?, ?, ?)";
-    $item_stmt = $conn->prepare($item_query);
-    if (!$item_stmt) {
-        throw new Exception("Database Error (Items): " . $conn->error);
-    }
-    
-    // Bind variables for item insertion (Best Practice: Bind once, update values in loop)
-    $p_id = 0; $qty = 0; $price = 0.0;
-    $item_stmt->bind_param("iiid", $order_id, $p_id, $qty, $price);
-    
-    $stock_query = "UPDATE products SET stock = stock - ? WHERE product_id = ?";
-    $stock_stmt = $conn->prepare($stock_query);
-    if (!$stock_stmt) {
-        throw new Exception("Database Error (Stock): " . $conn->error);
-    }
-    $stock_stmt->bind_param("ii", $qty, $p_id);
+$first = $user_info['first_name'] ?? $user_info['firstname'] ?? $user_info['name'] ?? '';
+$last  = $user_info['last_name']  ?? $user_info['lastname']  ?? '';
+$user_name  = trim("$first $last") ?: 'Customer';
+$user_email = $user_info['email'] ?? $user_info['email_address'] ?? 'customer@example.com';
 
-    foreach ($cart_items as $item) {
-        $p_id = $item['product_id'];
-        $qty = $item['quantity'];
-        $price = $item['price'];
-        
-        if (!$item_stmt->execute()) {
-            throw new Exception("Item Insert Failed: " . $item_stmt->error);
-        }
-        
-        if (!$stock_stmt->execute()) {
-            throw new Exception("Stock Update Failed: " . $stock_stmt->error);
-        }
-    }
-    $item_stmt->close();
-    $stock_stmt->close();
+// ─── PayMongo PaymentIntent ────────────────────────────────────────────────────
+$amount_centavos = (int) round($amount_to_pay * 100);
 
-    // STEP 3: Remove ONLY the purchased items from the cart
-    $clear_cart_query = "DELETE FROM cart WHERE user_id = ? AND cart_id IN ($ids_string)";
-    $clear_cart_stmt = $conn->prepare($clear_cart_query);
-    if (!$clear_cart_stmt) {
-        throw new Exception("Database Error (Cart): " . $conn->error);
-    }
-    $clear_cart_stmt->bind_param("i", $user_id);
-    if (!$clear_cart_stmt->execute()) {
-        throw new Exception("Cart Clear Failed: " . $clear_cart_stmt->error);
-    }
-    $clear_cart_stmt->close();
+$pi_response = pm_request('/payment_intents', 'POST', [
+    'data' => [
+        'attributes' => [
+            'amount'                 => $amount_centavos,
+            'payment_method_allowed' => ['gcash', 'card', 'paymaya'],
+            'payment_method_options' => ['card' => ['request_three_d_secure' => 'any']],
+            'currency'               => 'PHP',
+            'capture_type'           => 'automatic',
+            'description'            => 'PSS Grocery Order — ' . $user_name,
+        ]
+    ]
+]);
 
-    // ==========================================
-    // EVERYTHING SUCCEEDED! COMMIT THE DATA
-    // ==========================================
-    $conn->commit();
-
-    // Redirect to a success page with their tracking number
-    header("Location: ../../modules/customer/order_success.php?tracking=" . $tracking_no);
-    exit();
-
-} catch (Exception $e) {
-    // ==========================================
-    // SOMETHING FAILED! UNDO EVERYTHING
-    // ==========================================
-    $conn->rollback();
-    
-    // Log the error (in a real app) and send the user back with a message
-    $_SESSION['error'] = "Order Failed: " . $e->getMessage();
-    header("Location: ../../modules/customer/cart.php");
+if (!isset($pi_response['data']['id'])) {
+    error_log('PayMongo PI failed: ' . json_encode($pi_response));
+    header("Location: ../../modules/customer/cart.php?error=payment_init_failed");
     exit();
 }
 
-$conn->close();
-?>
+$payment_intent_id = $pi_response['data']['id'];
+$client_key        = $pi_response['data']['attributes']['client_key'] ?? '';
+
+// ─── Insert Order ──────────────────────────────────────────────────────────────
+$pickup_datetime = $pickup_date . ' ' . $pickup_time . ':00';
+$tracking_no     = 'ORD-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -4));
+$payment_method  = NULL;
+
+$stmt = $conn->prepare("
+    INSERT INTO orders
+        (user_id, tracking_no, total_amount, payment_method, payment_type, upfront_payment,
+         balance_due, pickup_datetime, payment_status, order_status,
+         payment_intent_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', ?, NOW())
+");
+
+if (!$stmt) die('Order prepare failed: ' . $conn->error);
+
+$stmt->bind_param("isdssddss",
+    $user_id,
+    $tracking_no,
+    $total_amount,
+    $payment_method,
+    $payment_type,
+    $amount_to_pay,
+    $balance_due,
+    $pickup_datetime,
+    $payment_intent_id
+);
+if (!$stmt->execute()) {
+    die('INSERT execute failed: ' . $stmt->error);
+}
+$order_id = $conn->insert_id;
+$stmt->close();
+
+if (!$order_id) {
+    die('Insert ran but no order_id returned. Last error: ' . $conn->error);
+}
+
+// ─── Insert Order Items ────────────────────────────────────────────────────────
+// Only $cart_items (fetched by $ids_string) are inserted — no stray items possible.
+foreach ($cart_items as $item) {
+    $is = $conn->prepare("INSERT INTO order_items (order_id, product_id, quantity, price_at_checkout) VALUES (?, ?, ?, ?)");
+    if (!$is) die('order_items prepare failed: ' . $conn->error);
+    $is->bind_param("iiid", $order_id, $item['product_id'], $item['quantity'], $item['final_price']);
+    $is->execute();
+    $is->close();
+}
+
+// ─── Session & Redirect ────────────────────────────────────────────────────────
+$_SESSION['pending_order_id']     = $order_id;
+$_SESSION['payment_intent_id']    = $payment_intent_id;
+$_SESSION['payment_client_key']   = $client_key;
+$_SESSION['payment_selected_ids'] = $selected_ids;
+$_SESSION['payment_user_name']    = $user_name;
+$_SESSION['payment_user_email']   = $user_email;
+
+header("Location: ../../modules/customer/payment.php?order_id=" . $order_id);
+exit();

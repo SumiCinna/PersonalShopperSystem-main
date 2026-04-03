@@ -1,16 +1,20 @@
 <?php
+// auth/login.php
 session_start();
 require_once '../config/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    
+
     $username_input = trim($_POST['username']);
     $password_input = $_POST['password'];
-    
-    $expected_role = $_POST['login_type'] ?? 'customer'; 
+    $expected_role  = $_POST['login_type'] ?? 'customer';
 
-    function redirectWithError($error_message, $role) {
+    function redirectWithError($error_message, $role, $extra = []) {
         $_SESSION['error'] = $error_message;
+        // Pass extra data (e.g. user_id for resend) via session
+        foreach ($extra as $k => $v) {
+            $_SESSION[$k] = $v;
+        }
         if ($role === 'admin') {
             header("Location: ../admin-login.php");
         } elseif ($role === 'cashier') {
@@ -18,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($role === 'inventory') {
             header("Location: ../inventory-login.php");
         } else {
-            header("Location: ../customer-login.php"); 
+            header("Location: ../customer-login.php");
         }
         exit();
     }
@@ -27,27 +31,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirectWithError('Please fill in both username and password.', $expected_role);
     }
 
-    $stmt = $conn->prepare("SELECT user_id, username, password, role, status FROM users WHERE username = ? OR email = ?");
+    $stmt = $conn->prepare("SELECT user_id, username, password, role, status, email_verified FROM users WHERE username = ? OR email = ?");
     $stmt->bind_param("ss", $username_input, $username_input);
     $stmt->execute();
     $result = $stmt->get_result();
 
     if ($result->num_rows === 1) {
         $user = $result->fetch_assoc();
-        
+
         if (password_verify($password_input, $user['password']) || $password_input === $user['password']) {
-            
+
+            // Role check
             if ($user['role'] !== $expected_role) {
                 redirectWithError('Access denied. You do not have permission for this portal.', $expected_role);
             }
 
+            // ── Email verification check (customers only) ─────────────────────
+            if ($user['role'] === 'customer' && empty($user['email_verified'])) {
+                redirectWithError(
+                    'Please verify your email address before logging in. Check your inbox for the activation link.',
+                    $expected_role,
+                    ['unverified_user_id' => $user['user_id']]
+                );
+            }
+
+            // Status check
             if ($user['status'] !== 'active') {
                 redirectWithError('This account is currently ' . $user['status'] . '. Please contact support.', $expected_role);
             }
 
-            $_SESSION['user_id'] = $user['user_id'];
+            // ── Success ───────────────────────────────────────────────────────
+            $_SESSION['user_id']  = $user['user_id'];
             $_SESSION['username'] = $user['username'];
-            $_SESSION['role'] = $user['role'];
+            $_SESSION['role']     = $user['role'];
+
+            // Clear any leftover verification session vars
+            unset($_SESSION['unverified_user_id']);
 
             $update_stmt = $conn->prepare("UPDATE users SET last_login = NOW() WHERE user_id = ?");
             $update_stmt->bind_param("i", $user['user_id']);
@@ -71,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         redirectWithError('Invalid username or password.', $expected_role);
     }
-    
+
     $stmt->close();
 } else {
     header("Location: ../index.php");

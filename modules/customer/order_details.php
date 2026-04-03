@@ -1,364 +1,479 @@
 <?php
 // modules/customer/order_details.php
 session_start();
+date_default_timezone_set('Asia/Manila');
 require_once '../../config/config.php';
 
-// --- SECURITY CHECK ---
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
     header("Location: ../../index.php");
     exit();
 }
 
-if (!isset($_GET['id']) || empty($_GET['id'])) {
+$user_id  = $_SESSION['user_id'];
+$order_id = intval($_GET['id'] ?? 0);
+
+if (!$order_id) {
     header("Location: orders.php");
     exit();
 }
 
-$order_id = intval($_GET['id']);
-$user_id = $_SESSION['user_id'];
+// ── Load Order ────────────────────────────────────────────────────────────────
+$stmt = $conn->prepare("SELECT * FROM orders WHERE order_id = ? AND user_id = ?");
+$stmt->bind_param("ii", $order_id, $user_id);
+$stmt->execute();
+$order = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
-// 1. Fetch the Main Order Details (Verifying it belongs to this user!)
-$order_query = "SELECT * FROM orders WHERE order_id = ? AND user_id = ?";
-$order_stmt = $conn->prepare($order_query);
-$order_stmt->bind_param("ii", $order_id, $user_id);
-$order_stmt->execute();
-$order_result = $order_stmt->get_result();
-
-if ($order_result->num_rows === 0) {
+if (!$order) {
     header("Location: orders.php");
     exit();
 }
-$order = $order_result->fetch_assoc();
-$order_stmt->close();
 
-// 2. Fetch the Specific Items inside this Order
-$items_query = "SELECT oi.quantity, oi.price_at_checkout, p.name, p.image_url, p.unit_value, p.unit_measure 
-                FROM order_items oi 
-                JOIN products p ON oi.product_id = p.product_id 
-                WHERE oi.order_id = ?";
-$items_stmt = $conn->prepare($items_query);
-$items_stmt->bind_param("i", $order_id);
-$items_stmt->execute();
-$items_result = $items_stmt->get_result();
+// ── Load Order Items ──────────────────────────────────────────────────────────
+$stmt = $conn->prepare("
+    SELECT oi.quantity, oi.price_at_checkout, p.name, p.category, p.image_url
+    FROM order_items oi
+    JOIN products p ON oi.product_id = p.product_id
+    WHERE oi.order_id = ?
+");
+if (!$stmt) die('order_items query failed: ' . $conn->error);
+$stmt->bind_param("i", $order_id);
+$stmt->execute();
+$order_items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 
-$order_items = [];
-while ($row = $items_result->fetch_assoc()) {
-    $order_items[] = $row;
+// ── Payment Type Labels ───────────────────────────────────────────────────────
+$pt_labels = [
+    'full'       => 'Full Payment',
+    'partial_50' => '50% Downpayment',
+    'partial_30' => '30% Downpayment',
+];
+$pt_label = $pt_labels[$order['payment_type']] ?? 'Payment';
+
+// ── Payment method display (fallback to Card) ─────────────────────────────────
+$payment_method_display = $order['payment_method'];
+if (!$payment_method_display || strtolower($payment_method_display) === 'unpaid' || trim($payment_method_display) === '') {
+    $payment_method_display = 'Card';
 }
-$items_stmt->close();
 
-// --- CANCELLATION LOGIC ---
-// Philippine Time (UTC+8) 
-date_default_timezone_set('Asia/Manila');
-$now = time();
-$order_placed_time = strtotime($order['created_at']);
-$minutes_since_order = ($now - $order_placed_time) / 60;
-$within_window = $minutes_since_order <= 30;
-$minutes_remaining = max(0, 30 - floor($minutes_since_order));
+// ── Derived values ────────────────────────────────────────────────────────────
+$is_full_paid     = ($order['payment_type'] === 'full'       && $order['payment_status'] === 'paid');
+$is_partial_50    = ($order['payment_type'] === 'partial_50' && $order['payment_status'] === 'paid');
+$is_partial_30    = ($order['payment_type'] === 'partial_30' && $order['payment_status'] === 'paid');
+$has_balance      = floatval($order['balance_due']) > 0 && $order['payment_status'] === 'paid';
+$paid_pct         = match($order['payment_type']) {
+    'partial_50' => 50,
+    'partial_30' => 30,
+    default      => 100,
+};
 
-$cancellable_statuses = ['pending', 'payment_confirmed'];
-$status_allows_cancel = in_array($order['order_status'], $cancellable_statuses);
+$pickup_formatted  = $order['pickup_datetime']
+    ? date('D, M j, Y \a\t g:i A', strtotime($order['pickup_datetime']))
+    : 'Not set';
+$created_formatted = date('M j, Y \a\t g:i A', strtotime($order['created_at']));
 
-$can_cancel = $within_window && $status_allows_cancel;
+// ── Cancellation Logic ────────────────────────────────────────────────────────
+$is_cancellable = false;
+$time_remaining = 0;
+if ($order['order_status'] === 'pending' && $order['payment_status'] === 'pending') {
+    $created_time      = new DateTime($order['created_at']);
+    $current_time      = new DateTime();
+    $interval          = $current_time->getTimestamp() - $created_time->getTimestamp();
+    $cancellation_window = 30 * 60;
 
-// Reason why they can't cancel (for UI messaging)
-$cancel_denied_reason = '';
-if (!$can_cancel) {
-    if (!$status_allows_cancel) {
-        switch ($order['order_status']) {
-            case 'processing': $cancel_denied_reason = 'cancellation_denied_prep'; break;
-            case 'ready':      $cancel_denied_reason = 'cancellation_denied_ready'; break;
-            case 'completed':  $cancel_denied_reason = 'cancellation_denied_completed'; break;
-            case 'cancelled':  $cancel_denied_reason = 'already_cancelled'; break;
-            default:           $cancel_denied_reason = 'cancellation_denied_status'; break;
-        }
-    } elseif (!$within_window) {
-        $cancel_denied_reason = 'window_expired';
+    if ($interval < $cancellation_window) {
+        $is_cancellable = true;
+        $time_remaining = $cancellation_window - $interval;
     }
 }
 
-// Include the Customer Header
-$page_title = 'Order Details - ' . $order['tracking_no'];
-require_once '../../includes/customer_header.php'; 
+$page_title = 'Order Details — ' . htmlspecialchars($order['tracking_no']);
+require_once '../../includes/customer_header.php';
 
-function getStatusBadge($status) {
-    switch ($status) {
-        case 'pending':             return '<span class="bg-yellow-100 text-yellow-800 text-sm font-bold px-4 py-1.5 rounded-full border border-yellow-200">Pending</span>';
-        case 'payment_confirmed':   return '<span class="bg-indigo-100 text-indigo-800 text-sm font-bold px-4 py-1.5 rounded-full border border-indigo-200">Payment Confirmed</span>';
-        case 'processing':          return '<span class="bg-blue-100 text-blue-800 text-sm font-bold px-4 py-1.5 rounded-full border border-blue-200">Being Prepared</span>';
-        case 'ready':               return '<span class="bg-green-100 text-green-800 text-sm font-bold px-4 py-1.5 rounded-full border border-green-200 animate-pulse">Ready for Pickup</span>';
-        case 'completed':           return '<span class="bg-gray-100 text-gray-800 text-sm font-bold px-4 py-1.5 rounded-full border border-gray-200">Completed</span>';
-        case 'cancelled':           return '<span class="bg-red-100 text-red-800 text-sm font-bold px-4 py-1.5 rounded-full border border-red-200">Cancelled</span>';
-        default:                    return '<span class="bg-gray-100 text-gray-800 text-sm font-bold px-4 py-1.5 rounded-full">Unknown</span>';
+// ── Status badge helpers ──────────────────────────────────────────────────────
+function orderStatusBadge($status) {
+    $map = [
+        'pending'    => ['bg-yellow-100 text-yellow-800 border-yellow-200', 'bg-yellow-500', 'Pending'],
+        'processing' => ['bg-blue-100 text-blue-800 border-blue-200',       'bg-blue-500',   'Processing'],
+        'ready'      => ['bg-green-100 text-green-800 border-green-200',    'bg-green-500',  'Ready for Pickup'],
+        'completed'  => ['bg-gray-100 text-gray-700 border-gray-200',       'bg-gray-400',   'Completed'],
+        'cancelled'  => ['bg-red-100 text-red-800 border-red-200',          'bg-red-500',    'Cancelled'],
+    ];
+    [$cls, $dot, $label] = $map[$status] ?? ['bg-gray-100 text-gray-600 border-gray-200', 'bg-gray-400', ucfirst($status)];
+    return "<span class=\"inline-flex items-center px-3 py-1 rounded-full text-sm font-bold border $cls\">
+                <span class=\"w-2 h-2 rounded-full $dot mr-2\"></span>$label
+            </span>";
+}
+
+function paymentStatusBadge($status) {
+    if ($status === 'paid') {
+        return '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-green-100 text-green-800 border border-green-200">✓ Paid</span>';
     }
+    return '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-yellow-100 text-yellow-800 border border-yellow-200">⏳ Pending</span>';
 }
 ?>
 
-<main class="container mx-auto px-6 py-12 flex-grow bg-gray-50">
-    <div class="max-w-5xl mx-auto">
+<main class="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-6 px-4">
+<div class="max-w-7xl mx-auto space-y-4">
 
-        <?php if (isset($_SESSION['success'])): ?>
-            <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6 rounded shadow-sm font-bold">
-                <?php echo $_SESSION['success']; unset($_SESSION['success']); ?>
-            </div>
-        <?php endif; ?>
-        <?php if (isset($_SESSION['error'])): ?>
-            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-sm font-bold">
-                <?php echo $_SESSION['error']; unset($_SESSION['error']); ?>
-            </div>
-        <?php endif; ?>
+    <!-- Back Button -->
+    <a href="orders.php" class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 font-semibold transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+        Back to Orders
+    </a>
 
-        <a href="orders.php" class="inline-flex items-center text-blue-600 hover:text-blue-800 font-semibold mb-6 transition">
-            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-            Back to All Orders
-        </a>
-
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-8 mb-8 flex flex-col md:flex-row justify-between items-start md:items-center">
+    <!-- ── Header Card ──────────────────────────────────────────────────────── -->
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-700 rounded-2xl shadow-lg text-white px-7 py-5">
+        <div class="flex flex-col md:flex-row md:justify-between md:items-center gap-3">
             <div>
-                <h1 class="text-2xl font-black text-gray-900 mb-1">Order <?php echo htmlspecialchars($order['tracking_no']); ?></h1>
-                <p class="text-sm text-gray-500 flex items-center">
-                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    Placed on <?php echo date('F j, Y \a\t g:i A', strtotime($order['created_at'])); ?>
-                </p>
+                <p class="text-blue-200 text-xs font-bold uppercase tracking-widest mb-0.5">Order Details</p>
+                <h1 class="text-2xl font-black tracking-tight"><?php echo htmlspecialchars($order['tracking_no']); ?></h1>
+                <p class="text-blue-200 text-sm mt-0.5">Placed on <?php echo $created_formatted; ?></p>
             </div>
-            <div class="mt-4 md:mt-0 flex flex-col items-end gap-3">
-                <?php echo getStatusBadge($order['order_status']); ?>
+            <div class="flex flex-row md:flex-row items-center gap-2">
+                <?php echo orderStatusBadge($order['order_status']); ?>
+                <?php echo paymentStatusBadge($order['payment_status']); ?>
+            </div>
+        </div>
+    </div>
 
-                <?php if ($can_cancel): ?>
-                    <!-- CANCELLATION ALLOWED: show button + countdown -->
-                    <button onclick="openCancelModal()" class="text-sm text-red-500 hover:text-red-700 font-bold underline decoration-red-200 hover:decoration-red-700 transition">
-                        Cancel Order
-                    </button>
-                    <div class="flex items-center gap-1.5 bg-orange-50 border border-orange-200 text-orange-700 text-xs font-semibold px-3 py-1.5 rounded-full">
-                        <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>Cancel window closes in <strong id="cancelCountdown"></strong></span>
+    <!-- ── Cancellation Timer ───────────────────────────────────────────────── -->
+    <?php if ($is_cancellable): ?>
+    <div id="cancellation-banner" class="bg-red-50 border-2 border-dashed border-red-200 rounded-2xl px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div>
+            <h3 class="font-black text-red-800">Need to cancel?</h3>
+            <p class="text-sm text-red-600">You can cancel within the next <strong><span id="countdown-timer">--:--</span></strong> minutes.</p>
+        </div>
+        <form action="../../core/customer/cancel_order.php" method="POST" onsubmit="return confirm('Are you sure you want to cancel this order? This action cannot be undone.');">
+            <input type="hidden" name="order_id" value="<?php echo $order_id; ?>">
+            <button type="submit" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-5 rounded-xl transition shadow-md">
+                Cancel Order
+            </button>
+        </form>
+    </div>
+    <?php endif; ?>
+
+    <!-- ── Main Grid: Payment + Right Column ────────────────────────────────── -->
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+
+        <!-- LEFT: Payment Breakdown (wider) -->
+        <div class="lg:col-span-3 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="px-6 py-3 border-b border-gray-100 flex items-center gap-2">
+                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+                </svg>
+                <h2 class="font-black text-gray-800 text-base">Payment Breakdown</h2>
+            </div>
+
+            <div class="p-5">
+                <!-- Payment Type Banner -->
+                <?php if ($is_full_paid): ?>
+                <div class="bg-green-50 border border-green-200 rounded-xl p-3 mb-4 flex items-center gap-3">
+                    <div class="w-9 h-9 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="font-black text-green-800 text-sm">Fully Paid — No balance due!</p>
+                        <p class="text-xs text-green-600">₱<?php echo number_format($order['total_amount'], 2); ?> paid in full online via <?php echo ucfirst($payment_method_display); ?>.</p>
+                    </div>
+                </div>
+                <?php elseif ($is_partial_50 || $is_partial_30): ?>
+                <div class="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-4 flex items-center gap-3">
+                    <div class="w-9 h-9 bg-orange-400 rounded-full flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="font-black text-orange-800 text-sm"><?php echo $paid_pct; ?>% Downpayment Paid — Balance due at store pickup</p>
+                        <p class="text-xs text-orange-600">Please bring <strong>₱<?php echo number_format($order['balance_due'], 2); ?></strong> when you pick up your order.</p>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Payment Progress Bar -->
+                <?php if ($order['payment_status'] === 'paid'): ?>
+                <div class="mb-4">
+                    <div class="flex justify-between text-xs font-semibold text-gray-500 mb-1">
+                        <span>Payment progress</span>
+                        <span><?php echo $paid_pct; ?>% paid</span>
+                    </div>
+                    <div class="bg-gray-200 rounded-full h-3">
+                        <div class="bg-green-500 h-3 rounded-full" style="width: <?php echo $paid_pct; ?>%"></div>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Amount Rows -->
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center py-2.5 border-b border-gray-100">
+                        <div>
+                            <p class="font-semibold text-gray-800 text-sm">Order Total</p>
+                            <p class="text-xs text-gray-400">All items combined</p>
+                        </div>
+                        <span class="text-base font-black text-gray-900">₱<?php echo number_format($order['total_amount'], 2); ?></span>
                     </div>
 
-                <?php elseif ($cancel_denied_reason === 'window_expired'): ?>
-                    <!-- WINDOW EXPIRED -->
-                    <div class="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold px-3 py-2 rounded-lg max-w-xs text-right">
-                        <svg class="w-4 h-4 flex-shrink-0 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>30-minute cancellation window has expired. Cancellation is no longer available.</span>
+                    <div class="flex justify-between items-center py-2.5 border-b border-gray-100">
+                        <div>
+                            <p class="font-semibold text-gray-800 text-sm">
+                                <?php echo $pt_label; ?>
+                                <span class="ml-2 text-xs font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                                    <?php echo $paid_pct; ?>%
+                                </span>
+                            </p>
+                            <p class="text-xs text-gray-500">Paid online via <?php echo ucfirst($payment_method_display); ?></p>
+                        </div>
+                        <span class="text-base font-black <?php echo $order['payment_status'] === 'paid' ? 'text-green-600' : 'text-yellow-500'; ?>">
+                            <?php echo $order['payment_status'] === 'paid' ? '✓ ' : '⏳ '; ?>₱<?php echo number_format($order['upfront_payment'], 2); ?>
+                        </span>
                     </div>
 
-                <?php elseif ($cancel_denied_reason === 'cancellation_denied_prep'): ?>
-                    <!-- STAFF ALREADY PREPARING -->
-                    <div class="flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold px-3 py-2 rounded-lg max-w-xs text-right">
-                        <svg class="w-4 h-4 flex-shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                        <span>Staff has already begun preparing your order. Cancellation is no longer allowed.</span>
+                    <?php if (floatval($order['balance_due']) > 0): ?>
+                    <div class="flex justify-between items-center py-2.5 bg-orange-50 rounded-xl px-4 border border-orange-200">
+                        <div>
+                            <p class="font-bold text-orange-800 text-sm">Balance Due at Store Pickup</p>
+                            <p class="text-xs text-orange-600">Pay this amount when you collect your order</p>
+                        </div>
+                        <span class="text-base font-black text-orange-700">₱<?php echo number_format($order['balance_due'], 2); ?></span>
                     </div>
-
-                <?php elseif ($cancel_denied_reason === 'cancellation_denied_ready'): ?>
-                    <!-- READY FOR PICKUP -->
-                    <div class="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 text-xs font-semibold px-3 py-2 rounded-lg max-w-xs text-right">
-                        <svg class="w-4 h-4 flex-shrink-0 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                        <span>Your order is ready for pickup. Head to the store!</span>
+                    <?php else: ?>
+                    <div class="flex justify-between items-center py-2.5 bg-green-50 rounded-xl px-4 border border-green-200">
+                        <p class="font-bold text-green-700 text-sm">No Balance Due</p>
+                        <span class="text-base font-black text-green-600">₱0.00</span>
                     </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
 
-                <?php elseif ($cancel_denied_reason === 'cancellation_denied_completed'): ?>
-                    <!-- COMPLETED -->
-                    <div class="flex items-center gap-2 bg-gray-100 border border-gray-200 text-gray-600 text-xs font-semibold px-3 py-2 rounded-lg max-w-xs text-right">
-                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>This order has been picked up and completed.</span>
+        <!-- RIGHT: Pickup + Order Progress stacked -->
+        <div class="lg:col-span-2 flex flex-col gap-4">
+
+            <!-- Pickup Info -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 flex-1">
+                <h2 class="font-black text-gray-800 text-base mb-3 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                    </svg>
+                    Pickup Schedule
+                </h2>
+                <div class="bg-amber-50 rounded-xl p-4 border border-amber-200">
+                    <p class="text-xs text-amber-700 font-semibold mb-1">Scheduled for</p>
+                    <p class="text-lg font-black text-gray-900"><?php echo $pickup_formatted; ?></p>
+                    <p class="text-xs text-amber-600 mt-2">Please arrive 10–15 minutes early. Items will be reserved for your pickup time.</p>
+                </div>
+            </div>
+
+            <!-- Order Status Timeline -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 flex-1">
+                <h2 class="font-black text-gray-800 text-base mb-3 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Order Progress
+                </h2>
+                <?php
+                $stages      = ['pending', 'processing', 'ready', 'completed'];
+                $current_idx = array_search($order['order_status'], $stages);
+                $current_idx = ($current_idx === false) ? 0 : $current_idx;
+                $labels      = ['Order Placed', 'Being Prepared', 'Ready for Pickup', 'Completed'];
+                $descs       = ['Your order was received.', 'Staff are preparing your items.', 'Head to the pickup counter!', 'Order successfully collected.'];
+                ?>
+                <div class="space-y-2">
+                    <?php foreach ($stages as $i => $stage): ?>
+                    <?php
+                    $done   = $i <= $current_idx;
+                    $active = $i === $current_idx;
+                    $dotCls = $done ? 'bg-blue-600' : 'bg-gray-200';
+                    $lblCls = $done ? 'text-gray-900 font-bold' : 'text-gray-400';
+                    ?>
+                    <div class="flex items-start gap-3">
+                        <div class="flex flex-col items-center">
+                            <div class="w-7 h-7 rounded-full <?php echo $dotCls; ?> flex items-center justify-center flex-shrink-0">
+                                <?php if ($done): ?>
+                                <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                <?php else: ?>
+                                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                                <?php endif; ?>
+                            </div>
+                            <?php if ($i < count($stages) - 1): ?>
+                            <div class="w-0.5 h-3 <?php echo $done && $i < $current_idx ? 'bg-blue-300' : 'bg-gray-200'; ?> mt-0.5"></div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="pb-1">
+                            <p class="text-sm <?php echo $lblCls; ?>"><?php echo $labels[$i]; ?></p>
+                            <?php if ($active): ?>
+                            <p class="text-xs text-blue-500 font-semibold"><?php echo $descs[$i]; ?></p>
+                            <?php endif; ?>
+                        </div>
                     </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
 
-                <?php elseif ($cancel_denied_reason === 'already_cancelled'): ?>
-                    <!-- ALREADY CANCELLED - badge handles it, no extra msg needed -->
+        </div>
+    </div><!-- /main grid -->
 
+    <!-- ── Order Items Card ─────────────────────────────────────────────────── -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-100 flex items-center gap-2">
+            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+            </svg>
+            <h2 class="font-black text-gray-800 text-base">Items Ordered (<?php echo count($order_items); ?>)</h2>
+        </div>
+
+        <!-- Desktop -->
+        <div class="hidden md:block overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500">
+                        <th class="px-6 py-3 text-left font-semibold">Product</th>
+                        <th class="px-6 py-3 text-center font-semibold">Qty</th>
+                        <th class="px-6 py-3 text-right font-semibold">Unit Price</th>
+                        <th class="px-6 py-3 text-right font-semibold">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    <?php foreach ($order_items as $item): ?>
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-3">
+                            <p class="font-semibold text-gray-900 text-sm"><?php echo htmlspecialchars($item['name']); ?></p>
+                            <?php if (!empty($item['category'])): ?>
+                            <p class="text-xs text-gray-400"><?php echo htmlspecialchars($item['category']); ?></p>
+                            <?php endif; ?>
+                        </td>
+                        <td class="px-6 py-3 text-center">
+                            <span class="bg-blue-100 text-blue-700 font-black text-sm px-3 py-0.5 rounded-full">
+                                <?php echo $item['quantity']; ?>x
+                            </span>
+                        </td>
+                        <td class="px-6 py-3 text-right text-sm font-semibold text-gray-700">
+                            ₱<?php echo number_format($item['price_at_checkout'], 2); ?>
+                        </td>
+                        <td class="px-6 py-3 text-right font-black text-gray-900 text-sm">
+                            ₱<?php echo number_format($item['price_at_checkout'] * $item['quantity'], 2); ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+                <tfoot>
+                    <tr class="bg-gray-50 border-t-2 border-gray-200">
+                        <td colspan="3" class="px-6 py-3 text-right font-black text-gray-700 text-sm uppercase tracking-wider">Order Total</td>
+                        <td class="px-6 py-3 text-right font-black text-blue-700 text-base">₱<?php echo number_format($order['total_amount'], 2); ?></td>
+                    </tr>
+                    <?php if ($order['payment_status'] === 'paid'): ?>
+                    <tr class="bg-green-50">
+                        <td colspan="3" class="px-6 py-2 text-right font-bold text-green-700 text-sm">Paid Online (<?php echo $pt_label; ?>)</td>
+                        <td class="px-6 py-2 text-right font-black text-green-700 text-sm">₱<?php echo number_format($order['upfront_payment'], 2); ?></td>
+                    </tr>
+                    <?php if ($order['balance_due'] > 0): ?>
+                    <tr class="bg-orange-50">
+                        <td colspan="3" class="px-6 py-2 text-right font-bold text-orange-700 text-sm">Balance Due at Pickup</td>
+                        <td class="px-6 py-2 text-right font-black text-orange-700 text-sm">₱<?php echo number_format($order['balance_due'], 2); ?></td>
+                    </tr>
+                    <?php endif; ?>
+                    <?php endif; ?>
+                </tfoot>
+            </table>
+        </div>
+
+        <!-- Mobile item list -->
+        <div class="md:hidden divide-y divide-gray-100">
+            <?php foreach ($order_items as $item): ?>
+            <div class="px-5 py-3 flex justify-between items-center">
+                <div class="flex-1">
+                    <p class="font-semibold text-gray-900 text-sm"><?php echo htmlspecialchars($item['name']); ?></p>
+                    <p class="text-xs text-gray-400"><?php echo htmlspecialchars($item['category']); ?> &bull; ₱<?php echo number_format($item['price_at_checkout'], 2); ?> each</p>
+                </div>
+                <div class="text-right ml-4">
+                    <span class="bg-blue-100 text-blue-700 font-black text-xs px-2 py-0.5 rounded-full"><?php echo $item['quantity']; ?>x</span>
+                    <p class="font-black text-gray-900 text-sm mt-1">₱<?php echo number_format($item['price_at_checkout'] * $item['quantity'], 2); ?></p>
+                </div>
+            </div>
+            <?php endforeach; ?>
+
+            <!-- Mobile Total Summary -->
+            <div class="px-5 py-3 bg-gray-50 space-y-2">
+                <div class="flex justify-between font-bold text-gray-700 text-sm">
+                    <span>Order Total</span>
+                    <span>₱<?php echo number_format($order['total_amount'], 2); ?></span>
+                </div>
+                <?php if ($order['payment_status'] === 'paid'): ?>
+                <div class="flex justify-between text-sm font-bold text-green-600">
+                    <span>Paid (<?php echo $pt_label; ?>)</span>
+                    <span>₱<?php echo number_format($order['upfront_payment'], 2); ?></span>
+                </div>
+                <?php if ($order['balance_due'] > 0): ?>
+                <div class="flex justify-between text-sm font-bold text-orange-600">
+                    <span>Balance at Pickup</span>
+                    <span>₱<?php echo number_format($order['balance_due'], 2); ?></span>
+                </div>
+                <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>
-
-        <!-- Cancellation Policy Info Box -->
-        <?php if ($order['order_status'] !== 'cancelled' && $order['order_status'] !== 'completed'): ?>
-        <div class="bg-white border border-gray-200 rounded-xl p-5 mb-8 shadow-sm">
-            <h3 class="text-sm font-bold text-gray-700 mb-1 flex items-center gap-2">
-                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                Cancellation Policy
-            </h3>
-            <p class="text-xs text-gray-400 mb-3">The ✓ / ✗ below shows whether <strong>cancellation is allowed</strong> at each stage — not the order status.</p>
-            <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-                <?php
-                $policy_rows = [
-                    ['label' => 'Order Placed',       'status' => 'pending',     'allowed' => true,  'note' => 'Yes (within 30 mins)'],
-                    ['label' => 'Ready for Pickup',   'status' => 'ready',       'allowed' => false, 'note' => 'No'],
-                    ['label' => 'Picked Up / Done',   'status' => 'completed',   'allowed' => false, 'note' => 'No'],
-                ];
-                foreach ($policy_rows as $row):
-                    $is_current = ($order['order_status'] === $row['status']);
-                    $border = $is_current ? 'border-2 border-blue-400 bg-blue-50' : 'border border-gray-100 bg-gray-50';
-                ?>
-                <div class="<?php echo $border; ?> rounded-lg p-3 py-4 flex flex-col items-center gap-1.5 text-center">
-                    <span class="font-semibold text-gray-600"><?php echo $row['label']; ?></span>
-                    <?php if ($row['allowed']): ?>
-                        <span class="flex items-center gap-1 text-green-600 font-bold">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>
-                            <?php echo $row['note']; ?>
-                        </span>
-                    <?php else: ?>
-                        <span class="flex items-center gap-1 text-red-500 font-bold">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-                            <?php echo $row['note']; ?>
-                        </span>
-                    <?php endif; ?>
-                    <?php if ($is_current): ?>
-                        <span class="text-blue-600 font-bold text-xs leading-tight">← Current Status of the Order</span>
-                    <?php endif; ?>
-                </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-        <?php endif; ?>
-
-        <div class="flex flex-col lg:flex-row gap-8">
-            
-            <div class="lg:w-2/3">
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div class="p-6 border-b border-gray-100 bg-gray-50">
-                        <h2 class="text-lg font-bold text-gray-800">Items in this Order (<?php echo count($order_items); ?>)</h2>
-                    </div>
-                    <ul class="divide-y divide-gray-100">
-                        <?php foreach ($order_items as $item): ?>
-                            <li class="p-6 flex flex-col sm:flex-row items-center hover:bg-gray-50 transition">
-                                <div class="w-20 h-20 flex-shrink-0 bg-white border border-gray-200 rounded-lg flex items-center justify-center p-2 mb-4 sm:mb-0">
-                                    <?php if(!empty($item['image_url'])): ?>
-                                        <img src="<?php echo htmlspecialchars($item['image_url']); ?>" class="max-h-full object-contain">
-                                    <?php else: ?>
-                                        <svg class="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="sm:ml-6 flex-1 text-center sm:text-left">
-                                    <h3 class="text-base font-bold text-gray-800"><?php echo htmlspecialchars($item['name']); ?></h3>
-                                    <p class="text-xs text-gray-500 mt-1"><?php echo floatval($item['unit_value']) . ' ' . htmlspecialchars($item['unit_measure']); ?></p>
-                                    <p class="text-sm text-gray-600 mt-2">Qty: <span class="font-bold text-gray-900"><?php echo $item['quantity']; ?></span></p>
-                                </div>
-                                <div class="mt-4 sm:mt-0 sm:ml-6 text-right">
-                                    <p class="text-sm text-gray-500">₱<?php echo number_format($item['price_at_checkout'], 2); ?> each</p>
-                                    <p class="text-lg font-black text-blue-900 mt-1">₱<?php echo number_format($item['price_at_checkout'] * $item['quantity'], 2); ?></p>
-                                </div>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-            </div>
-
-            <div class="lg:w-1/3 space-y-6">
-                
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-                    <h2 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Payment Summary</h2>
-                    <div class="flex justify-between text-gray-600 mb-3">
-                        <span>Subtotal</span>
-                        <span>₱<?php echo number_format($order['total_amount'], 2); ?></span>
-                    </div>
-                    <div class="flex justify-between text-gray-600 mb-4 border-b pb-4">
-                        <span>Convenience Fee</span>
-                        <span>₱0.00</span>
-                    </div>
-                    <div class="flex justify-between text-xl font-black text-gray-900 mb-4">
-                        <span>Grand Total</span>
-                        <span class="text-blue-700">₱<?php echo number_format($order['total_amount'], 2); ?></span>
-                    </div>
-                    <div class="bg-gray-50 rounded p-4 border border-gray-200">
-                        <p class="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Method</p>
-                        <p class="font-semibold text-gray-800 capitalize mb-3">
-                            <?php echo str_replace('_', ' ', htmlspecialchars($order['payment_method'])); ?>
-                        </p>
-                        <p class="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Payment Status</p>
-                        <?php if($order['payment_status'] === 'paid'): ?>
-                            <span class="text-sm text-green-700 font-bold bg-green-100 px-2 py-1 rounded">Paid</span>
-                        <?php else: ?>
-                            <span class="text-sm text-yellow-700 font-bold bg-yellow-100 px-2 py-1 rounded">Pending Payment</span>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <div class="bg-blue-50 rounded-xl shadow-sm border border-blue-100 p-6">
-                    <h2 class="text-lg font-bold text-blue-900 mb-2 flex items-center">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-                        In-Store Pickup
-                    </h2>
-                    <p class="text-sm text-blue-800">Present your Tracking Number <strong>(<?php echo htmlspecialchars($order['tracking_no']); ?>)</strong> at the Customer Service / Online Orders counter when your order is ready.</p>
-                </div>
-
-            </div>
-        </div>
-
     </div>
+
+    <!-- ── Footer Actions ───────────────────────────────────────────────────── -->
+    <div class="flex flex-col sm:flex-row gap-3 pb-4">
+        <a href="orders.php"
+           class="flex-1 flex items-center justify-center gap-2 py-2.5 px-5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold rounded-xl transition shadow-sm text-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+            Back to Orders
+        </a>
+
+        <?php if ($order['order_status'] !== 'cancelled'): ?>
+            <a href="receipt.php?order_id=<?php echo $order_id; ?>"
+               class="flex-1 flex items-center justify-center gap-2 py-2.5 px-5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition shadow-md text-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                View Receipt
+            </a>
+        <?php endif; ?>
+    </div>
+
+</div>
 </main>
 
-<!-- Cancel Confirmation Modal -->
-<?php if ($can_cancel): ?>
-<div id="cancelOrderModal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-    <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity backdrop-blur-sm"></div>
-    <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
-        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-            <div class="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
-                <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
-                    <div class="sm:flex sm:items-start">
-                        <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                            <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
-                            </svg>
-                        </div>
-                        <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
-                            <h3 class="text-base font-semibold leading-6 text-gray-900" id="modal-title">Cancel Order</h3>
-                            <div class="mt-2 space-y-2">
-                                <p class="text-sm text-gray-500">Are you sure you want to cancel this order? This action cannot be undone and items will be returned to stock.</p>
-                                <p class="text-xs text-orange-600 font-semibold bg-orange-50 border border-orange-200 rounded p-2">
-                                    ⏱ You have <strong id="modalCountdown"></strong> left to cancel.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
-                    <form action="../../core/customer/cancel_order.php" method="POST">
-                        <input type="hidden" name="order_id" value="<?php echo $order['order_id']; ?>">
-                        <button type="submit" class="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto">Yes, Cancel Order</button>
-                    </form>
-                    <button type="button" onclick="closeCancelModal()" class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto">Keep Order</button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
 <script>
-    function openCancelModal() { document.getElementById('cancelOrderModal').classList.remove('hidden'); }
-    function closeCancelModal() { document.getElementById('cancelOrderModal').classList.add('hidden'); }
-
-    // Countdown: deadline = order placed time + 30 minutes
-    const deadline = new Date(<?php echo ($order_placed_time + 1800) * 1000; ?>);
-
-    function formatCountdown(ms) {
-        if (ms <= 0) return '0:00';
-        const totalSec = Math.floor(ms / 1000);
-        const min = Math.floor(totalSec / 60);
-        const sec = totalSec % 60;
-        return min + ':' + String(sec).padStart(2, '0');
-    }
+document.addEventListener('DOMContentLoaded', function() {
+    <?php if ($is_cancellable): ?>
+    const countdownElement = document.getElementById('countdown-timer');
+    const cancellationBanner = document.getElementById('cancellation-banner');
+    let timeLeft = <?php echo $time_remaining; ?>;
 
     function updateCountdown() {
-        const remaining = deadline - Date.now();
-        const text = formatCountdown(remaining);
-
-        const el = document.getElementById('cancelCountdown');
-        const modalEl = document.getElementById('modalCountdown');
-        if (el) el.textContent = text;
-        if (modalEl) modalEl.textContent = text;
-
-        if (remaining <= 0) {
-            // Window expired — reload page so PHP hides the cancel button
-            location.reload();
+        if (timeLeft <= 0) {
+            countdownElement.textContent = '00:00';
+            if (cancellationBanner) cancellationBanner.style.display = 'none';
+            clearInterval(timerInterval);
+            return;
         }
+        const minutes = Math.floor(timeLeft / 60);
+        let seconds = timeLeft % 60;
+        seconds = seconds < 10 ? '0' + seconds : seconds;
+        countdownElement.textContent = `${minutes}:${seconds}`;
+        timeLeft--;
     }
 
     updateCountdown();
-    setInterval(updateCountdown, 1000);
+    const timerInterval = setInterval(updateCountdown, 1000);
+    <?php endif; ?>
+});
 </script>
-<?php endif; ?>
 
-<?php 
-require_once '../../includes/customer_footer.php'; 
-$conn->close(); 
+<?php
+require_once '../../includes/customer_footer.php';
+$conn->close();
 ?>

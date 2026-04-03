@@ -26,8 +26,8 @@ if ($lock_result->num_rows > 0) {
 $lock_check->close();
 
 // --- SEARCH & FILTER ---
-$search    = isset($_GET['search']) ? trim($_GET['search']) : '';
-$date_filter = isset($_GET['date']) ? trim($_GET['date']) : '';
+$search      = isset($_GET['search']) ? trim($_GET['search']) : '';
+$date_filter = isset($_GET['date'])   ? trim($_GET['date'])   : '';
 
 $where_clauses = ["o.order_status = 'pending'"];
 $params = [];
@@ -47,7 +47,7 @@ if ($date_filter !== '') {
 
 $where_sql = implode(' AND ', $where_clauses);
 
-$query = "SELECT o.order_id, o.tracking_no, o.total_amount, o.balance_due, o.payment_method, 
+$query = "SELECT o.order_id, o.tracking_no, o.total_amount, o.balance_due, o.payment_method,
                  o.pickup_datetime, u.username, u.user_id,
                  up.firstname, up.middlename, up.surname, up.suffix, up.mobile,
                  CONCAT_WS(' ', up.firstname, up.middlename, up.surname, up.suffix) AS full_name
@@ -66,8 +66,17 @@ if (!empty($params)) {
     $result = $conn->query($query);
 }
 
+// ── Helper: payment method display with Card fallback ─────────────────────────
+function paymentMethodDisplay($raw) {
+    $raw = trim((string)$raw);
+    if ($raw === '' || strtolower($raw) === 'unpaid') {
+        return 'Card';
+    }
+    return ucwords(str_replace('_', ' ', $raw));
+}
+
 $page_title = 'POS Terminal Queue';
-require_once '../../includes/cashier_header.php'; 
+require_once '../../includes/cashier_header.php';
 ?>
 
 <main class="flex-1 overflow-y-auto p-8 bg-gray-50">
@@ -144,41 +153,44 @@ require_once '../../includes/cashier_header.php';
                 <?php if ($result->num_rows > 0): ?>
                     <?php while ($order = $result->fetch_assoc()): ?>
                         <?php
+                            // ── Payment method with Card fallback ─────────────
+                            $pm_display = paymentMethodDisplay($order['payment_method']);
+
                             $pickup_ts = strtotime($order['pickup_datetime']);
-                            $now = time();
+                            $now  = time();
                             $diff = $pickup_ts - $now;
 
-                            $row_class = "hover:bg-blue-50 transition group";
+                            $row_class        = "hover:bg-blue-50 transition group";
                             $time_badge_color = "bg-slate-100 text-slate-600";
-                            $status_label = "";
+                            $status_label     = "";
 
                             if ($diff < 0) {
-                                $row_class = "bg-red-50 hover:bg-red-100 transition group border-l-4 border-red-500";
+                                $row_class        = "bg-red-50 hover:bg-red-100 transition group border-l-4 border-red-500";
                                 $time_badge_color = "bg-red-200 text-red-800";
-                                $status_label = "OVERDUE";
+                                $status_label     = "OVERDUE";
                             } elseif ($diff < 7200) {
-                                $row_class = "bg-yellow-50 hover:bg-yellow-100 transition group border-l-4 border-yellow-400";
+                                $row_class        = "bg-yellow-50 hover:bg-yellow-100 transition group border-l-4 border-yellow-400";
                                 $time_badge_color = "bg-yellow-200 text-yellow-800";
-                                $status_label = "URGENT";
+                                $status_label     = "URGENT";
                             }
 
                             // Fetch order items for this order
-                            $items_stmt = $conn->prepare("SELECT oi.quantity, oi.price_at_checkout, p.name 
-                                FROM order_items oi JOIN products p ON oi.product_id = p.product_id 
+                            $items_stmt = $conn->prepare("SELECT oi.quantity, oi.price_at_checkout, p.name
+                                FROM order_items oi JOIN products p ON oi.product_id = p.product_id
                                 WHERE oi.order_id = ?");
                             $items_stmt->bind_param("i", $order['order_id']);
                             $items_stmt->execute();
-                            $items_res = $items_stmt->get_result();
+                            $items_res   = $items_stmt->get_result();
                             $order_items = $items_res->fetch_all(MYSQLI_ASSOC);
                             $items_stmt->close();
 
                             // Fetch past orders from same customer (last 5, excluding current)
-                            $hist_stmt = $conn->prepare("SELECT tracking_no, total_amount, order_status, created_at 
-                                FROM orders WHERE user_id = ? AND order_id != ? 
+                            $hist_stmt = $conn->prepare("SELECT tracking_no, total_amount, order_status, created_at
+                                FROM orders WHERE user_id = ? AND order_id != ?
                                 ORDER BY created_at DESC LIMIT 5");
                             $hist_stmt->bind_param("ii", $order['user_id'], $order['order_id']);
                             $hist_stmt->execute();
-                            $hist_res = $hist_stmt->get_result();
+                            $hist_res      = $hist_stmt->get_result();
                             $order_history = $hist_res->fetch_all(MYSQLI_ASSOC);
                             $hist_stmt->close();
                         ?>
@@ -228,7 +240,8 @@ require_once '../../includes/cashier_header.php';
                                         <div class="font-black text-green-700 text-lg leading-none">PAID</div>
                                     </div>
                                 <?php endif; ?>
-                                <div class="text-[10px] text-slate-400 mt-1 uppercase"><?php echo strtoupper(str_replace('_', ' ', $order['payment_method'])); ?></div>
+                                <!-- ✅ Fixed: uses $pm_display with Card fallback -->
+                                <div class="text-[10px] text-slate-400 mt-1 uppercase"><?php echo strtoupper($pm_display); ?></div>
                             </td>
 
                             <!-- Details Button -->
@@ -264,12 +277,13 @@ require_once '../../includes/cashier_header.php';
                                 pickup: <?php echo json_encode(date('F j, Y \a\t h:i A', $pickup_ts)); ?>,
                                 total: <?php echo json_encode('₱' . number_format($order['total_amount'], 2)); ?>,
                                 balance: <?php echo json_encode($order['balance_due'] > 0 ? '₱' . number_format($order['balance_due'], 2) : 'Fully Paid'); ?>,
-                                payment_method: <?php echo json_encode(strtoupper(str_replace('_', ' ', $order['payment_method']))); ?>,
+                                // ✅ Fixed: uses $pm_display with Card fallback
+                                payment_method: <?php echo json_encode(strtoupper($pm_display)); ?>,
                                 items: <?php echo json_encode(array_map(function($i) {
                                     return [
-                                        'name' => $i['name'],
-                                        'qty'  => $i['quantity'],
-                                        'price' => '₱' . number_format($i['price_at_checkout'], 2),
+                                        'name'     => $i['name'],
+                                        'qty'      => $i['quantity'],
+                                        'price'    => '₱' . number_format($i['price_at_checkout'], 2),
                                         'subtotal' => '₱' . number_format($i['price_at_checkout'] * $i['quantity'], 2),
                                     ];
                                 }, $order_items)); ?>,
@@ -435,10 +449,10 @@ function openDetailsModal(orderId) {
         histDiv.innerHTML = '<p class="text-gray-400 text-xs italic">No previous orders from this customer.</p>';
     } else {
         const statusColors = {
-            'Pending': 'bg-yellow-100 text-yellow-700',
-            'Completed': 'bg-gray-100 text-gray-600',
-            'Cancelled': 'bg-red-100 text-red-600',
-            'Ready': 'bg-green-100 text-green-700',
+            'Pending':    'bg-yellow-100 text-yellow-700',
+            'Completed':  'bg-gray-100 text-gray-600',
+            'Cancelled':  'bg-red-100 text-red-600',
+            'Ready':      'bg-green-100 text-green-700',
             'Processing': 'bg-blue-100 text-blue-700',
         };
         histDiv.innerHTML = d.history.map(h => `

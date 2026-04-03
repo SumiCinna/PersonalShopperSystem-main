@@ -12,7 +12,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
 $user_id = $_SESSION['user_id'];
 
 // Fetch all orders for this specific customer, newest first
-$query = "SELECT order_id, tracking_no, total_amount, payment_method, payment_status, order_status, created_at 
+$query = "SELECT order_id, tracking_no, total_amount, payment_method, payment_status, order_status, payment_type, created_at 
           FROM orders 
           WHERE user_id = ? 
           ORDER BY created_at DESC";
@@ -101,13 +101,28 @@ function getStatusBadge($status) {
                                 </td>
                                 <td class="px-6 py-4">
                                     <div class="flex flex-col">
+                                        <?php 
+                                        $payment_method_display = $order['payment_method'];
+                                        // Don't display "Pending" or "Unpaid" for the payment method
+                                        // Only show actual payment methods (Card, GCash, etc)
+                                        if (!$payment_method_display || strtolower($payment_method_display) === 'unpaid' || strtolower($payment_method_display) === 'pending') {
+                                            $payment_method_display = '';
+                                        }
+                                        ?>
                                         <span class="text-sm font-medium text-gray-700 capitalize">
-                                            <?php echo str_replace('_', ' ', htmlspecialchars($order['payment_method'])); ?>
+                                            <?php echo $payment_method_display ? str_replace('_', ' ', htmlspecialchars($payment_method_display)) : 'Card'; ?>
                                         </span>
                                         <?php if($order['payment_status'] === 'paid'): ?>
-                                            <span class="text-xs text-green-600 font-bold flex items-center mt-0.5"><svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg> Paid</span>
-                                        <?php else: ?>
-                                            <span class="text-xs text-yellow-600 font-bold flex items-center mt-0.5"><svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Payment Pending</span>
+                                            <span class="text-xs text-green-600 font-bold flex items-center mt-0.5"><svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg> 
+                                            <?php
+                                            $paid_pct = match($order['payment_type']) {
+                                                'partial_50' => '50%',
+                                                'partial_30' => '30%',
+                                                default => '100%'
+                                            };
+                                            echo $paid_pct . ' Paid';
+                                            ?>
+                                            </span>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -149,11 +164,22 @@ function getStatusBadge($status) {
                             </div>
                             <div class="text-right">
                                 <span class="text-xs text-gray-400 uppercase font-bold block mb-1">Payment</span>
-                                <span class="text-sm font-medium text-gray-700 capitalize block"><?php echo str_replace('_', ' ', htmlspecialchars($order['payment_method'])); ?></span>
+                                <?php 
+                                $payment_method_display = $order['payment_method'];
+                                if (!$payment_method_display || strtolower($payment_method_display) === 'unpaid' || strtolower($payment_method_display) === 'pending') {
+                                    $payment_method_display = '';
+                                }
+                                ?>
+                                <span class="text-sm font-medium text-gray-700 capitalize block"><?php echo $payment_method_display ? str_replace('_', ' ', htmlspecialchars($payment_method_display)) : 'Card'; ?></span>
                                 <?php if($order['payment_status'] === 'paid'): ?>
-                                    <span class="text-xs text-green-600 font-bold">Paid</span>
-                                <?php else: ?>
-                                    <span class="text-xs text-yellow-600 font-bold">Pending</span>
+                                    <?php
+                                    $paid_pct = match($order['payment_type']) {
+                                        'partial_50' => '50%',
+                                        'partial_30' => '30%',
+                                        default => '100%'
+                                    };
+                                    ?>
+                                    <span class="text-xs text-green-600 font-bold"><?php echo $paid_pct; ?> Paid</span>
                                 <?php endif; ?>
                             </div>
                         </div>
