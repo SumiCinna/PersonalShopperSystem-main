@@ -27,19 +27,86 @@ $lock_check->close();
 
 // --- FETCH ALL ORDERS (with optional invoice/transaction data) ---
 // Uses LEFT JOIN so cancelled/pending orders without invoices still appear
-$query = "SELECT 
-            o.order_id, o.tracking_no, o.order_status, o.total_amount, o.created_at,
-            u.username AS customer_name,
-            i.invoice_id, i.invoice_no, i.grand_total, i.issued_at,
-            t.payment_method
-          FROM orders o
-          JOIN users u ON o.user_id = u.user_id
-          LEFT JOIN invoices i ON i.order_id = o.order_id
-          LEFT JOIN transactions t ON t.invoice_id = i.invoice_id
-          ORDER BY o.created_at DESC
-          LIMIT 100";
+$per_page = 10;
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) {
+        $page = 1;
+}
 
-$result = $conn->query($query);
+// --- FILTERS ---
+$filter_search = isset($_GET['search']) ? trim((string)$_GET['search']) : '';
+$filter_date_from = isset($_GET['date_from']) ? trim((string)$_GET['date_from']) : '';
+$filter_date_to = isset($_GET['date_to']) ? trim((string)$_GET['date_to']) : '';
+
+$where_parts = [];
+$bind_types = '';
+$bind_values = [];
+
+if ($filter_search !== '') {
+    $where_parts[] = "(u.username LIKE ? OR o.tracking_no LIKE ? OR i.invoice_no LIKE ?)";
+    $bind_types .= 'sss';
+    $search_like = "%$filter_search%";
+    $bind_values[] = $search_like;
+    $bind_values[] = $search_like;
+    $bind_values[] = $search_like;
+}
+if ($filter_date_from !== '') {
+    $where_parts[] = "DATE(o.created_at) >= ?";
+    $bind_types .= 's';
+    $bind_values[] = $filter_date_from;
+}
+if ($filter_date_to !== '') {
+    $where_parts[] = "DATE(o.created_at) <= ?";
+    $bind_types .= 's';
+    $bind_values[] = $filter_date_to;
+}
+
+$where_sql = count($where_parts) ? 'WHERE ' . implode(' AND ', $where_parts) : '';
+
+// Count total records for pagination
+$count_query = "SELECT COUNT(DISTINCT o.order_id) AS total
+                FROM orders o
+                JOIN users u ON o.user_id = u.user_id
+                LEFT JOIN invoices i ON i.order_id = o.order_id
+                $where_sql";
+$count_stmt = $conn->prepare($count_query);
+if ($bind_types !== '' && !empty($bind_values)) {
+    $count_stmt->bind_param($bind_types, ...$bind_values);
+}
+$count_stmt->execute();
+$count_result = $count_stmt->get_result();
+$total_records = (int)($count_result->fetch_assoc()['total'] ?? 0);
+$count_stmt->close();
+$total_pages = max(1, (int)ceil($total_records / $per_page));
+
+if ($page > $total_pages) {
+        $page = $total_pages;
+}
+
+$offset = ($page - 1) * $per_page;
+
+$query = "SELECT 
+                        o.order_id, o.tracking_no, o.order_status, o.total_amount, o.created_at,
+                        u.username AS customer_name,
+                        i.invoice_id, i.invoice_no, i.grand_total, i.issued_at,
+                        t.payment_method
+                    FROM orders o
+                    JOIN users u ON o.user_id = u.user_id
+                    LEFT JOIN invoices i ON i.order_id = o.order_id
+                    LEFT JOIN transactions t ON t.invoice_id = i.invoice_id
+                    $where_sql
+                    ORDER BY o.created_at DESC
+                    LIMIT ? OFFSET ?";
+
+$stmt = $conn->prepare($query);
+$final_types = $bind_types . 'ii';
+$final_values = array_merge($bind_values, [$per_page, $offset]);
+$stmt->bind_param($final_types, ...$final_values);
+$stmt->execute();
+$result = $stmt->get_result();
+
+$start_record = $total_records > 0 ? $offset + 1 : 0;
+$end_record = $total_records > 0 ? min($offset + $result->num_rows, $total_records) : 0;
 
 // --- STATUS BADGE HELPER ---
 function statusBadge($status) {
@@ -54,6 +121,17 @@ function statusBadge($status) {
     return "<span class=\"inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-full border $cls uppercase tracking-wide\">
                 <span>$icon</span><span>$label</span>
             </span>";
+}
+
+function build_history_query(array $overrides = []): string {
+    $base = array_filter([
+        'search' => $_GET['search'] ?? '',
+        'date_from' => $_GET['date_from'] ?? '',
+        'date_to' => $_GET['date_to'] ?? '',
+        'page' => $_GET['page'] ?? '',
+    ], static fn($v) => $v !== null && $v !== '');
+
+    return http_build_query(array_merge($base, $overrides));
 }
 
 $page_title = 'Transaction History';
@@ -73,12 +151,40 @@ require_once '../../includes/cashier_header.php';
             <p class="text-gray-500 mt-1">Review all orders and reprint official receipts for completed sales.</p>
         </div>
         <div class="bg-white px-5 py-3 rounded-xl shadow-sm border border-gray-200 text-sm font-semibold text-gray-600 flex items-center">
-            <span class="mr-2">Total Records:</span>
-            <span class="text-blue-600 font-black text-xl"><?php echo $result->num_rows; ?></span>
+            <span class="mr-2">Showing:</span>
+            <span class="text-blue-600 font-black text-xl"><?php echo $start_record; ?>-<?php echo $end_record; ?></span>
+            <span class="mx-2 text-gray-400">|</span>
+            <span class="mr-2">Total:</span>
+            <span class="text-blue-600 font-black text-xl"><?php echo $total_records; ?></span>
         </div>
     </div>
 
     <!-- ── Status Legend ──────────────────────────────────────────────────────── -->
+    <form method="GET" action="order_history.php" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-5">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+            <div class="md:col-span-2">
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Search</label>
+                <input type="text" name="search" value="<?php echo htmlspecialchars($filter_search); ?>"
+                       placeholder="Customer or Order Ref"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Date From</label>
+                <input type="date" name="date_from" value="<?php echo htmlspecialchars($filter_date_from); ?>"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Date To</label>
+                <input type="date" name="date_to" value="<?php echo htmlspecialchars($filter_date_to); ?>"
+                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none">
+            </div>
+        </div>
+        <div class="mt-3 flex items-center gap-2">
+            <button type="submit" class="px-4 py-2 text-sm font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition">Apply</button>
+            <a href="order_history.php" class="px-4 py-2 text-sm font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300">Reset</a>
+        </div>
+    </form>
+
     <div class="flex flex-wrap gap-2 mb-5">
         <span class="text-xs font-bold text-gray-400 uppercase tracking-wide self-center mr-1">Legend:</span>
         <span class="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-full border bg-yellow-100 text-yellow-800 border-yellow-300">🕐 Pending</span>
@@ -105,8 +211,10 @@ require_once '../../includes/cashier_header.php';
                 <tbody class="divide-y divide-gray-100">
                     <?php if ($result->num_rows > 0): ?>
                         <?php while ($row = $result->fetch_assoc()):
-                            $is_completed = $row['order_status'] === 'completed';
-                            $is_cancelled = $row['order_status'] === 'cancelled';
+                            $status_normalized = strtolower(trim((string)($row['order_status'] ?? '')));
+                            $is_completed = $status_normalized === 'completed';
+                            $is_cancelled = $status_normalized === 'cancelled';
+                            $has_receipt = !empty($row['invoice_id']);
 
                             // Row tint based on status
                             $row_bg = match($row['order_status']) {
@@ -179,7 +287,7 @@ require_once '../../includes/cashier_header.php';
                             </td>
 
                             <td class="p-4 text-center">
-                                <?php if ($is_completed && $row['invoice_id']): ?>
+                                <?php if ($has_receipt): ?>
                                     <a href="receipt.php?id=<?php echo $row['invoice_id']; ?>" target="_blank"
                                        class="inline-flex items-center text-sm font-bold text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition border border-blue-200">
                                         <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -216,6 +324,37 @@ require_once '../../includes/cashier_header.php';
             </table>
         </div>
     </div>
+
+    <?php if ($total_pages > 1): ?>
+        <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-gray-600">
+                Page <span class="font-bold text-gray-800"><?php echo $page; ?></span> of
+                <span class="font-bold text-gray-800"><?php echo $total_pages; ?></span>
+            </p>
+
+            <div class="flex items-center gap-1">
+                <?php if ($page > 1): ?>
+                    <a href="?<?php echo build_history_query(['page' => $page - 1]); ?>" class="px-3 py-1.5 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-100 transition">Prev</a>
+                <?php else: ?>
+                    <span class="px-3 py-1.5 text-sm font-semibold rounded-lg border border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed">Prev</span>
+                <?php endif; ?>
+
+                <?php for ($p = 1; $p <= $total_pages; $p++): ?>
+                    <?php if ($p == $page): ?>
+                        <span class="px-3 py-1.5 text-sm font-bold rounded-lg border border-blue-600 bg-blue-600 text-white"><?php echo $p; ?></span>
+                    <?php else: ?>
+                        <a href="?<?php echo build_history_query(['page' => $p]); ?>" class="px-3 py-1.5 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-100 transition"><?php echo $p; ?></a>
+                    <?php endif; ?>
+                <?php endfor; ?>
+
+                <?php if ($page < $total_pages): ?>
+                    <a href="?<?php echo build_history_query(['page' => $page + 1]); ?>" class="px-3 py-1.5 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-100 transition">Next</a>
+                <?php else: ?>
+                    <span class="px-3 py-1.5 text-sm font-semibold rounded-lg border border-gray-200 text-gray-400 bg-gray-100 cursor-not-allowed">Next</span>
+                <?php endif; ?>
+            </div>
+        </div>
+    <?php endif; ?>
 
 </main>
 

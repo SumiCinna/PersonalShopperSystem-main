@@ -60,8 +60,8 @@ $cool_stmt->close();
 
 if ($cool_row) {
     // Convert DB time (which is UTC) to timestamp, then compare with PHP Manila time
-    $db_time_utc    = strtotime($cool_row['created_at'] . ' UTC');
-    $seconds_since  = time() - $db_time_utc;
+    $db_time      = strtotime($cool_row['created_at']);
+$seconds_since = time() - $db_time;
     if ($seconds_since < 180) {
         $seconds_left = 180 - $seconds_since;
         $mins = floor($seconds_left / 60);

@@ -10,39 +10,48 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
 }
 
 // --- INVENTORY METRICS ---
+$totalProductsQuery  = "SELECT COUNT(*) as count FROM products";
+$totalProducts       = $conn->query($totalProductsQuery)->fetch_assoc()['count'];
 
-// 1. Total Products Count
-$totalProductsQuery = "SELECT COUNT(*) as count FROM products";
-$totalProductsResult = $conn->query($totalProductsQuery);
-$totalProducts = $totalProductsResult->fetch_assoc()['count'];
-
-// 2. Total Stock Value (Cost Price * Stock)
 $totalStockValueQuery = "SELECT SUM(cost_price * stock) as total_value FROM products WHERE status = 'active'";
-$totalStockValueResult = $conn->query($totalStockValueQuery);
-$totalStockValue = $totalStockValueResult->fetch_assoc()['total_value'] ?? 0;
+$totalStockValue      = $conn->query($totalStockValueQuery)->fetch_assoc()['total_value'] ?? 0;
 
-// 3. Low Stock Items (stock <= low_stock_threshold)
-$lowStockQuery = "SELECT COUNT(*) as count FROM products WHERE status = 'active' AND stock <= low_stock_threshold AND stock > 0";
-$lowStockResult = $conn->query($lowStockQuery);
-$lowStockCount = $lowStockResult->fetch_assoc()['count'];
+$lowStockQuery  = "SELECT COUNT(*) as count FROM products WHERE status = 'active' AND stock <= low_stock_threshold AND stock > 0";
+$lowStockCount  = $conn->query($lowStockQuery)->fetch_assoc()['count'];
 
-// 4. Out of Stock Items
-$outOfStockQuery = "SELECT COUNT(*) as count FROM products WHERE status = 'active' AND stock = 0";
-$outOfStockResult = $conn->query($outOfStockQuery);
-$outOfStockCount = $outOfStockResult->fetch_assoc()['count'];
+$outOfStockQuery  = "SELECT COUNT(*) as count FROM products WHERE status = 'active' AND stock = 0";
+$outOfStockCount  = $conn->query($outOfStockQuery)->fetch_assoc()['count'];
 
-// 5. Active Products
 $activeProductsQuery = "SELECT COUNT(*) as count FROM products WHERE status = 'active'";
-$activeProductsResult = $conn->query($activeProductsQuery);
-$activeProducts = $activeProductsResult->fetch_assoc()['count'];
+$activeProducts      = $conn->query($activeProductsQuery)->fetch_assoc()['count'];
 
-// 6. Get Low Stock Items for the table
-$lowStockItemsQuery = "SELECT product_id, name, sku, stock, low_stock_threshold FROM products WHERE status = 'active' AND stock <= low_stock_threshold AND stock > 0 ORDER BY stock ASC LIMIT 10";
+$lowStockItemsQuery  = "SELECT product_id, name, sku, stock, low_stock_threshold FROM products WHERE status = 'active' AND stock <= low_stock_threshold AND stock > 0 ORDER BY stock ASC LIMIT 10";
 $lowStockItemsResult = $conn->query($lowStockItemsQuery);
 
-// 7. Get Out of Stock Items for the table
-$outOfStockItemsQuery = "SELECT product_id, name, sku FROM products WHERE status = 'active' AND stock = 0 ORDER BY product_id DESC LIMIT 10";
+$outOfStockItemsQuery  = "SELECT product_id, name, sku FROM products WHERE status = 'active' AND stock = 0 ORDER BY product_id DESC LIMIT 10";
 $outOfStockItemsResult = $conn->query($outOfStockItemsQuery);
+
+// --- AUDIT TRAIL ---
+// FIX: Product name comes ONLY from LEFT JOIN products — no al.product_name column referenced.
+// Deleted products show "Deleted Product #ID".
+$auditQuery = "
+    SELECT
+        al.log_id,
+        al.action,
+        al.product_id,
+        COALESCE(p.name, CONCAT('Deleted Product #', al.product_id)) AS product_name,
+        al.field_changed,
+        al.old_value,
+        al.new_value,
+        u.username AS done_by,
+        al.created_at
+    FROM activity_logs al
+    JOIN users u ON al.user_id = u.user_id
+    LEFT JOIN products p ON al.product_id = p.product_id
+    ORDER BY al.created_at DESC
+    LIMIT 3
+";
+$auditResult = $conn->query($auditQuery);
 
 $page_title = 'Inventory Dashboard';
 require_once '../../includes/inventory_header.php';
@@ -57,7 +66,6 @@ require_once '../../includes/inventory_header.php';
 
     <!-- Key Metrics Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-        <!-- Total Products Card -->
         <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl shadow-sm p-6 border border-blue-200">
             <div class="flex justify-between items-start">
                 <div>
@@ -69,8 +77,6 @@ require_once '../../includes/inventory_header.php';
                 </svg>
             </div>
         </div>
-
-        <!-- Active Products Card -->
         <div class="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-sm p-6 border border-green-200">
             <div class="flex justify-between items-start">
                 <div>
@@ -82,8 +88,6 @@ require_once '../../includes/inventory_header.php';
                 </svg>
             </div>
         </div>
-
-        <!-- Low Stock Alert Card -->
         <div class="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl shadow-sm p-6 border border-yellow-200">
             <div class="flex justify-between items-start">
                 <div>
@@ -95,8 +99,6 @@ require_once '../../includes/inventory_header.php';
                 </svg>
             </div>
         </div>
-
-        <!-- Out of Stock Card -->
         <div class="bg-gradient-to-br from-red-50 to-red-100 rounded-xl shadow-sm p-6 border border-red-200">
             <div class="flex justify-between items-start">
                 <div>
@@ -108,8 +110,6 @@ require_once '../../includes/inventory_header.php';
                 </svg>
             </div>
         </div>
-
-        <!-- Stock Value Card -->
         <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl shadow-sm p-6 border border-purple-200">
             <div class="flex justify-between items-start">
                 <div>
@@ -123,9 +123,9 @@ require_once '../../includes/inventory_header.php';
         </div>
     </div>
 
-    <!-- Two Column Layout for Detailed Tables -->
+    <!-- Low Stock + Out of Stock Tables -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <!-- Low Stock Items Table -->
+        <!-- Low Stock -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="bg-gradient-to-r from-yellow-50 to-orange-50 px-6 py-4 border-b border-gray-200">
                 <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -170,7 +170,7 @@ require_once '../../includes/inventory_header.php';
             </div>
         </div>
 
-        <!-- Out of Stock Items Table -->
+        <!-- Out of Stock -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="bg-gradient-to-r from-red-50 to-pink-50 px-6 py-4 border-b border-gray-200">
                 <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -216,7 +216,112 @@ require_once '../../includes/inventory_header.php';
         </div>
     </div>
 
-    <!-- Quick Actions Section -->
+    <!-- AUDIT TRAIL -->
+    <div class="mt-8 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="bg-gradient-to-r from-indigo-50 to-blue-50 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+                </svg>
+                Inventory Audit Trail
+            </h2>
+            <a href="inventory_audit.php"
+               class="text-xs text-indigo-600 font-semibold bg-indigo-100 hover:bg-indigo-200 px-3 py-1 rounded-full transition">
+                View Full Audit →
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <?php if ($auditResult && $auditResult->num_rows > 0): ?>
+                <table class="w-full">
+                    <thead>
+                        <tr class="bg-gray-50 border-b border-gray-200">
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Product</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Field Changed</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Old Value</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">New Value</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Done By</th>
+                            <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date & Time</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        <?php while ($log = $auditResult->fetch_assoc()):
+                            $badge = match($log['action']) {
+                                'add'    => ['bg-green-100 text-green-800',   '+ Added'],
+                                'update' => ['bg-yellow-100 text-yellow-800', '~ Updated'],
+                                'delete' => ['bg-red-100 text-red-800',       '✕ Deleted'],
+                                default  => ['bg-gray-100 text-gray-600',     $log['action']],
+                            };
+                            $is_deleted_product = str_starts_with($log['product_name'], 'Deleted Product #');
+                            $field_normalized = strtolower((string)($log['field_changed'] ?? ''));
+                            $is_price_field = in_array($field_normalized, ['cost_price', 'selling_price', 'cost price', 'selling price'], true);
+                            $new_value_display = $log['new_value'];
+                            if ($is_price_field && $log['new_value'] !== null && $log['new_value'] !== '' && is_numeric($log['new_value'])) {
+                                $new_value_display = number_format((float)$log['new_value'], 2, '.', '');
+                            }
+                        ?>
+                            <tr class="hover:bg-indigo-50 transition">
+                                <td class="px-4 py-3">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold <?php echo $badge[0]; ?>">
+                                        <?php echo $badge[1]; ?>
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">
+                                    <?php if ($is_deleted_product): ?>
+                                        <span class="text-gray-400 italic text-xs"><?php echo htmlspecialchars($log['product_name']); ?></span>
+                                    <?php else: ?>
+                                        <?php echo htmlspecialchars($log['product_name']); ?>
+                                        <?php if ($log['product_id'] && $log['action'] !== 'delete'): ?>
+                                            <a href="edit_product.php?id=<?php echo $log['product_id']; ?>" class="ml-1 text-indigo-400 hover:text-indigo-600 text-xs">#<?php echo $log['product_id']; ?></a>
+                                        <?php endif; ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="px-4 py-3 text-sm text-gray-600 font-medium">
+                                    <?php echo $log['field_changed'] ? htmlspecialchars($log['field_changed']) : '<span class="text-gray-300">—</span>'; ?>
+                                </td>
+                                <td class="px-4 py-3 text-sm">
+                                    <?php if ($log['old_value']): ?>
+                                        <span class="text-red-500 line-through"><?php echo htmlspecialchars($log['old_value']); ?></span>
+                                    <?php else: ?>
+                                        <span class="text-gray-300">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="px-4 py-3 text-sm">
+                                    <?php if ($log['new_value']): ?>
+                                        <span class="text-green-600 font-medium"><?php echo htmlspecialchars((string)$new_value_display); ?></span>
+                                    <?php else: ?>
+                                        <span class="text-gray-300">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="px-4 py-3 text-sm text-gray-700">
+                                    <div class="flex items-center gap-2">
+                                        
+                                        </span>
+                                        <?php echo htmlspecialchars($log['done_by']); ?>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 text-sm whitespace-nowrap">
+                                    <div class="flex flex-col">
+                                        <span class="font-medium text-gray-700"><?php echo date('M d, Y', strtotime($log['created_at'])); ?></span>
+                                        <span class="text-xs text-gray-400"><?php echo date('h:i A', strtotime($log['created_at'])); ?></span>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+            <?php else: ?>
+                <div class="px-6 py-12 text-center">
+                    <svg class="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                    </svg>
+                    <p class="text-gray-500 text-sm">No activity logged yet.</p>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
     <div class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
         <a href="products.php" class="flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition shadow-sm">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

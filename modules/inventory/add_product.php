@@ -1,5 +1,5 @@
 <?php
-// modules/admin/add_product.php
+// modules/inventory/add_product.php
 session_start();
 require_once '../../config/config.php';
 
@@ -11,51 +11,67 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
 
 $error = '';
 
+// --- HELPER: Insert a single activity log row ---
+function log_activity($conn, $user_id, $action, $product_id, $product_name, $field = null, $old = null, $new = null) {
+    $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, action, product_id, product_name, field_changed, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("ississs", $user_id, $action, $product_id, $product_name, $field, $old, $new);
+    $stmt->execute();
+    $stmt->close();
+}
+
 // --- FORM PROCESSING LOGIC ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // 1. Sanitize and collect the inputs
-    $sku = trim($_POST['sku']);
-    $name = trim($_POST['name']);
-    $brand = trim($_POST['brand']);
-    $category = trim($_POST['category']);
-    $cost_price = floatval($_POST['cost_price']);
-    $price = floatval($_POST['price']);
-    $discount_price = !empty($_POST['discount_price']) ? floatval($_POST['discount_price']) : NULL;
-    
-    // Handle optional split unit measurements
-    $unit_value = !empty($_POST['unit_value']) ? floatval($_POST['unit_value']) : NULL;
-    $unit_measure = !empty($_POST['unit_measure']) ? $_POST['unit_measure'] : NULL;
-    
-    $stock = intval($_POST['stock']);
+    $sku              = trim($_POST['sku']);
+    $name             = trim($_POST['name']);
+    $brand            = trim($_POST['brand']);
+    $category         = trim($_POST['category']);
+    $cost_price       = floatval($_POST['cost_price']);
+    $price            = floatval($_POST['price']);
+    $discount_price   = !empty($_POST['discount_price']) ? floatval($_POST['discount_price']) : NULL;
+    $unit_value       = !empty($_POST['unit_value']) ? floatval($_POST['unit_value']) : NULL;
+    $unit_measure     = !empty($_POST['unit_measure']) ? $_POST['unit_measure'] : NULL;
+    $stock            = intval($_POST['stock']);
     $low_stock_threshold = intval($_POST['low_stock_threshold']);
-    $status = $_POST['status'];
-    $description = trim($_POST['description']);
-    $image_url = trim($_POST['image_url']); // Keeping it simple with URLs for now
+    $status           = $_POST['status'];
+    $description      = trim($_POST['description']);
+    $image_url        = trim($_POST['image_url']);
 
-    // 2. Basic Validation
     if (empty($sku) || empty($name) || empty($category)) {
         $error = "SKU, Product Name, and Category are required.";
     } else {
-        // 3. Check if SKU already exists (SKUs must be unique!)
         $check_stmt = $conn->prepare("SELECT product_id FROM products WHERE sku = ?");
         $check_stmt->bind_param("s", $sku);
         $check_stmt->execute();
-        
+
         if ($check_stmt->get_result()->num_rows > 0) {
             $error = "A product with this SKU already exists! Please use a unique SKU.";
         } else {
-            // 4. Insert into Database using Prepared Statements for security
             $insert_query = "INSERT INTO products 
                 (sku, name, brand, category, cost_price, price, discount_price, unit_value, unit_measure, stock, low_stock_threshold, status, description, image_url) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-                
+
             $stmt = $conn->prepare($insert_query);
-            $stmt->bind_param("ssssddddsiisss", 
-                $sku, $name, $brand, $category, $cost_price, $price, $discount_price, $unit_value, $unit_measure, $stock, $low_stock_threshold, $status, $description, $image_url
+            $stmt->bind_param("ssssddddsiisss",
+                $sku, $name, $brand, $category, $cost_price, $price, $discount_price,
+                $unit_value, $unit_measure, $stock, $low_stock_threshold,
+                $status, $description, $image_url
             );
 
             if ($stmt->execute()) {
-                // Success! Redirect back to the inventory table
+                $new_product_id = $conn->insert_id;
+
+                // --- AUDIT LOG: New product added ---
+                log_activity(
+                    $conn,
+                    $_SESSION['user_id'],
+                    'add',
+                    $new_product_id,
+                    $name,
+                    null,
+                    null,
+                    "SKU: $sku | Stock: $stock | Price: ₱$price | Status: $status"
+                );
+
                 header("Location: products.php");
                 exit();
             } else {
@@ -67,9 +83,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Include the Header & Sidebar
 $page_title = 'Add New Product';
-require_once '../../includes/inventory_header.php'; 
+require_once '../../includes/inventory_header.php';
 ?>
 
 <main class="flex-1 p-8">

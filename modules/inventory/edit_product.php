@@ -1,5 +1,5 @@
 <?php
-// modules/admin/edit_product.php
+// modules/inventory/edit_product.php
 session_start();
 require_once '../../config/config.php';
 
@@ -9,10 +9,9 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
     exit();
 }
 
-$error = '';
+$error   = '';
 $success = '';
 
-// 1. Ensure we have a Product ID in the URL
 if (!isset($_GET['id']) || empty($_GET['id'])) {
     header("Location: products.php");
     exit();
@@ -20,50 +19,115 @@ if (!isset($_GET['id']) || empty($_GET['id'])) {
 
 $product_id = intval($_GET['id']);
 
+// --- HELPER: Insert a single activity log row ---
+function log_activity($conn, $user_id, $action, $product_id, $product_name, $field = null, $old = null, $new = null) {
+    $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, action, product_id, product_name, field_changed, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("ississs", $user_id, $action, $product_id, $product_name, $field, $old, $new);
+    $stmt->execute();
+    $stmt->close();
+}
+
+// --- FETCH CURRENT PRODUCT DATA FIRST (needed for old-value comparison) ---
+$fetch_stmt = $conn->prepare("SELECT * FROM products WHERE product_id = ?");
+$fetch_stmt->bind_param("i", $product_id);
+$fetch_stmt->execute();
+$result = $fetch_stmt->get_result();
+
+if ($result->num_rows === 0) {
+    header("Location: products.php");
+    exit();
+}
+
+$product = $result->fetch_assoc();
+$fetch_stmt->close();
+
 // --- FORM PROCESSING LOGIC (UPDATE) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $sku = trim($_POST['sku']);
-    $name = trim($_POST['name']);
-    $brand = trim($_POST['brand']);
-    $category = trim($_POST['category']);
-    $cost_price = floatval($_POST['cost_price']);
-    $price = floatval($_POST['price']);
-    $discount_price = !empty($_POST['discount_price']) ? floatval($_POST['discount_price']) : NULL;
-    $unit_value = !empty($_POST['unit_value']) ? floatval($_POST['unit_value']) : NULL;
-    $unit_measure = !empty($_POST['unit_measure']) ? $_POST['unit_measure'] : NULL;
-    $stock = intval($_POST['stock']);
+    $sku                 = trim($_POST['sku']);
+    $name                = trim($_POST['name']);
+    $brand               = trim($_POST['brand']);
+    $category            = trim($_POST['category']);
+    $cost_price          = floatval($_POST['cost_price']);
+    $price               = floatval($_POST['price']);
+    $discount_price      = !empty($_POST['discount_price']) ? floatval($_POST['discount_price']) : NULL;
+    $unit_value          = !empty($_POST['unit_value']) ? floatval($_POST['unit_value']) : NULL;
+    $unit_measure        = !empty($_POST['unit_measure']) ? $_POST['unit_measure'] : NULL;
+    $stock               = intval($_POST['stock']);
     $low_stock_threshold = intval($_POST['low_stock_threshold']);
-    $status = $_POST['status'];
-    $description = trim($_POST['description']);
-    $image_url = trim($_POST['image_url']);
+    $status              = $_POST['status'];
+    $description         = trim($_POST['description']);
+    $image_url           = trim($_POST['image_url']);
 
     if (empty($sku) || empty($name) || empty($category)) {
         $error = "SKU, Product Name, and Category are required.";
     } else {
-        // CRUCIAL: Check if SKU exists, but EXCLUDE the current product's ID
         $check_stmt = $conn->prepare("SELECT product_id FROM products WHERE sku = ? AND product_id != ?");
         $check_stmt->bind_param("si", $sku, $product_id);
         $check_stmt->execute();
-        
+
         if ($check_stmt->get_result()->num_rows > 0) {
             $error = "Another product is already using this SKU! Please use a unique SKU.";
         } else {
-            // Execute the UPDATE query
             $update_query = "UPDATE products SET 
                 sku = ?, name = ?, brand = ?, category = ?, cost_price = ?, price = ?, discount_price = ?,
                 unit_value = ?, unit_measure = ?, stock = ?, low_stock_threshold = ?, 
                 status = ?, description = ?, image_url = ? 
                 WHERE product_id = ?";
-                
+
             $stmt = $conn->prepare($update_query);
-            $stmt->bind_param("ssssddddsiisssi", 
+            $stmt->bind_param("ssssddddsiisssi",
                 $sku, $name, $brand, $category, $cost_price, $price, $discount_price,
-                $unit_value, $unit_measure, $stock, $low_stock_threshold, 
+                $unit_value, $unit_measure, $stock, $low_stock_threshold,
                 $status, $description, $image_url, $product_id
             );
 
             if ($stmt->execute()) {
                 $success = "Product updated successfully!";
+
+                // --- AUDIT LOG: Compare old vs new, log only changed fields ---
+                // Define which fields to watch and their display labels
+                $watched_fields = [
+                    'name'                => ['label' => 'Product Name',     'old' => $product['name'],                'new' => $name],
+                    'sku'                 => ['label' => 'SKU',               'old' => $product['sku'],                 'new' => $sku],
+                    'brand'               => ['label' => 'Brand',             'old' => $product['brand'],               'new' => $brand],
+                    'category'            => ['label' => 'Category',          'old' => $product['category'],            'new' => $category],
+                    'cost_price'          => ['label' => 'Cost Price',        'old' => $product['cost_price'],          'new' => $cost_price],
+                    'price'               => ['label' => 'Selling Price',     'old' => $product['price'],               'new' => $price],
+                    'discount_price'      => ['label' => 'Discount Price',    'old' => $product['discount_price'],      'new' => $discount_price],
+                    'stock'               => ['label' => 'Stock',             'old' => $product['stock'],               'new' => $stock],
+                    'low_stock_threshold' => ['label' => 'Low Stock At',      'old' => $product['low_stock_threshold'], 'new' => $low_stock_threshold],
+                    'status'              => ['label' => 'Status',            'old' => $product['status'],              'new' => $status],
+                    'unit_value'          => ['label' => 'Unit Value',        'old' => $product['unit_value'],          'new' => $unit_value],
+                    'unit_measure'        => ['label' => 'Unit Measure',      'old' => $product['unit_measure'],        'new' => $unit_measure],
+                    'description'         => ['label' => 'Description',       'old' => $product['description'],         'new' => $description],
+                    'image_url'           => ['label' => 'Image URL',         'old' => $product['image_url'],           'new' => $image_url],
+                ];
+
+                $changes_logged = 0;
+                foreach ($watched_fields as $field_key => $field_data) {
+                    // Loose comparison — catches NULL vs '' and numeric drift
+                    if ((string)$field_data['old'] !== (string)$field_data['new']) {
+                        log_activity(
+                            $conn,
+                            $_SESSION['user_id'],
+                            'update',
+                            $product_id,
+                            $name,                  // use new name in case it was renamed
+                            $field_data['label'],
+                            $field_data['old'] ?? '—',
+                            $field_data['new'] ?? '—'
+                        );
+                        $changes_logged++;
+                    }
+                }
+
+                // Refresh $product so the form shows updated values
+                $fetch_stmt2 = $conn->prepare("SELECT * FROM products WHERE product_id = ?");
+                $fetch_stmt2->bind_param("i", $product_id);
+                $fetch_stmt2->execute();
+                $product = $fetch_stmt2->get_result()->fetch_assoc();
+                $fetch_stmt2->close();
+
             } else {
                 $error = "Error updating product: " . $conn->error;
             }
@@ -73,25 +137,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// --- FETCH CURRENT PRODUCT DATA ---
-// We do this AFTER the POST logic so the form shows the freshly updated data!
-$fetch_stmt = $conn->prepare("SELECT * FROM products WHERE product_id = ?");
-$fetch_stmt->bind_param("i", $product_id);
-$fetch_stmt->execute();
-$result = $fetch_stmt->get_result();
-
-if ($result->num_rows === 0) {
-    // Product doesn't exist, send them back to the inventory
-    header("Location: products.php");
-    exit();
-}
-
-$product = $result->fetch_assoc();
-$fetch_stmt->close();
-
-// Include the Header & Sidebar
 $page_title = 'Edit Product: ' . htmlspecialchars($product['name']);
-require_once '../../includes/inventory_header.php'; 
+require_once '../../includes/inventory_header.php';
 ?>
 
 <main class="flex-1 p-8">
@@ -147,7 +194,7 @@ require_once '../../includes/inventory_header.php';
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Category *</label>
                             <select name="category" required class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
                                 <?php 
-                                $categories = ['Beverages', 'Canned Goods', 'Condiments', 'Dairy', 'Fresh Produce', 'Noodles', 'Snacks', 'Cooking Essentials', 'Meat & Poultry'];
+                                $categories = ['Beverages','Canned Goods','Condiments','Dairy','Fresh Produce','Noodles','Snacks','Cooking Essentials','Meat & Poultry'];
                                 foreach ($categories as $cat) {
                                     $selected = ($product['category'] === $cat) ? 'selected' : '';
                                     echo "<option value=\"$cat\" $selected>$cat</option>";
@@ -166,7 +213,7 @@ require_once '../../includes/inventory_header.php';
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Unit of Measure</label>
                             <select name="unit_measure" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
                                 <?php 
-                                $units = ['' => 'None', 'g' => 'Grams (g)', 'kg' => 'Kilograms (kg)', 'ml' => 'Milliliters (ml)', 'L' => 'Liters (L)', 'pc' => 'Piece (pc)', 'pack' => 'Pack'];
+                                $units = ['' => 'None','g' => 'Grams (g)','kg' => 'Kilograms (kg)','ml' => 'Milliliters (ml)','L' => 'Liters (L)','pc' => 'Piece (pc)','pack' => 'Pack'];
                                 foreach ($units as $val => $label) {
                                     $selected = ($product['unit_measure'] === $val) ? 'selected' : '';
                                     echo "<option value=\"$val\" $selected>$label</option>";
@@ -210,7 +257,7 @@ require_once '../../includes/inventory_header.php';
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-1">Product Status *</label>
                         <select name="status" required class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
-                            <option value="active" <?php echo ($product['status'] === 'active') ? 'selected' : ''; ?>>Active (Visible to Customers)</option>
+                            <option value="active"   <?php echo ($product['status'] === 'active')   ? 'selected' : ''; ?>>Active (Visible to Customers)</option>
                             <option value="inactive" <?php echo ($product['status'] === 'inactive') ? 'selected' : ''; ?>>Inactive (Hidden)</option>
                         </select>
                     </div>
