@@ -6,20 +6,14 @@ if (session_status() === PHP_SESSION_ACTIVE) {
     session_destroy();
 }
 session_start();
-// auth/register.php
 
-// EmailJS credentials
 define('EMAILJS_SERVICE_ID',  'service_jl4ryyf');   
 define('EMAILJS_TEMPLATE_ID', 'template_0ntsd08');  
 define('EMAILJS_PUBLIC_KEY',  'u4hgAipwQS-Q0NAg-');   
-
-// Base URL of your site — used to build the activation link
 define('SITE_BASE_URL', 'http://localhost:3000/PersonalShopperSystem-main');
 
-// ─── HELPER: Send activation email via EmailJS REST API ────────────────────────
 function sendActivationEmail(string $toEmail, string $firstname, string $token): bool {
     $activationLink = SITE_BASE_URL . '/modules/customer/verify_email.php?token=' . urlencode($token);
-
     $payload = [
         'service_id'  => EMAILJS_SERVICE_ID,
         'template_id' => EMAILJS_TEMPLATE_ID,
@@ -30,7 +24,6 @@ function sendActivationEmail(string $toEmail, string $firstname, string $token):
             'activation_link' => $activationLink,
         ],
     ];
-
     $ch = curl_init('https://api.emailjs.com/api/v1.0/email/send');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -44,7 +37,6 @@ function sendActivationEmail(string $toEmail, string $firstname, string $token):
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-
     return ($httpCode === 200);
 }
 
@@ -62,18 +54,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $surname    = trim($_POST['surname'] ?? '');
     $suffix     = trim($_POST['suffix'] ?? '');
     $mobile     = trim($_POST['mobile'] ?? '');
-    $addr_label = trim($_POST['address_label'] ?? 'Home');
-    $region     = trim($_POST['region'] ?? '');
-    $province   = trim($_POST['province'] ?? '');
-    $city       = trim($_POST['city'] ?? '');
-    $barangay   = trim($_POST['barangay'] ?? '');
-    $block_no   = trim($_POST['block_no'] ?? '');
-    $lot_no     = trim($_POST['lot_no'] ?? '');
-    $postal     = trim($_POST['postal_code'] ?? '');
     $terms      = isset($_POST['terms']) ? 1 : 0;
-    $is_ncr     = (trim($_POST['is_ncr'] ?? '') === '1');
 
-    // ── Validation ────────────────────────────────────────────────────────────
     if (empty($username) || strlen($username) < 3) {
         $errors[] = 'Username must be at least 3 characters.';
     } elseif (strlen($username) > 20) {
@@ -128,26 +110,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($mobile) || !preg_match('/^09\d{9}$/', $mobile)) {
         $errors[] = 'Please enter a valid mobile number (09xx xxx xxxx).';
     }
-    if (empty($region) || strlen($region) > 100) {
-        $errors[] = 'Please select a valid region.';
-    }
-    if (!$is_ncr && (empty($province) || strlen($province) > 100)) {
-        $errors[] = 'Please select a valid province.';
-    }
-    if (empty($city) || strlen($city) > 100) {
-        $errors[] = 'Please select a valid city.';
-    }
-    if (empty($barangay) || strlen($barangay) > 100) {
-        $errors[] = 'Please select a valid barangay.';
-    }
-    if (!empty($postal) && !preg_match('/^\d{4}$/', $postal)) {
-        $errors[] = 'Postal code must be exactly 4 digits.';
-    }
     if (!$terms) {
         $errors[] = 'You must agree to the Terms and Conditions.';
     }
 
-    // ── Duplicate checks ──────────────────────────────────────────────────────
     if (empty($errors)) {
         $stmtU = $conn->prepare('SELECT user_id FROM users WHERE username = ?');
         $stmtU->bind_param('s', $username);
@@ -171,14 +137,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtM->close();
     }
 
-    // ── Insert + send verification ────────────────────────────────────────────
     if (empty($errors)) {
         $conn->begin_transaction();
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
         try {
             $hashed = password_hash($password, PASSWORD_BCRYPT);
-
-            // Status is 'pending' until email is verified
             $stmtUser = $conn->prepare(
                 'INSERT INTO users (username, password, email, role, terms_agreed, status, email_verified, created_at, updated_at)
                  VALUES (?, ?, ?, "customer", ?, "inactive", 0, NOW(), NOW())'
@@ -198,25 +161,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtProfile->execute();
             $stmtProfile->close();
 
-            $bn = $block_no ?: null;
-            $ln = $lot_no ?: null;
-            $pc = $postal ?: null;
-            $pv = $province ?: '';
-            $stmtAddr = $conn->prepare(
-                'INSERT INTO user_addresses (user_id, address_label, region, province, city, barangay, block_no, lot_no, postal_code, is_default)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)'
-            );
-            $stmtAddr->bind_param('issssssss', $userId, $addr_label, $region, $pv, $city, $barangay, $bn, $ln, $pc);
-            $stmtAddr->execute();
-            $stmtAddr->close();
-
-            // Generate secure token
             $token     = bin2hex(random_bytes(32));
             $expiresAt = date('Y-m-d H:i:s', strtotime('+24 hours'));
-
-            // Delete any old tokens for this user (safety)
             $conn->query("DELETE FROM email_verifications WHERE user_id = $userId");
-
             $stmtTok = $conn->prepare(
                 'INSERT INTO email_verifications (user_id, token, expires_at, created_at)
                  VALUES (?, ?, ?, NOW())'
@@ -224,27 +171,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtTok->bind_param('iss', $userId, $token, $expiresAt);
             $stmtTok->execute();
             $stmtTok->close();
-
             $conn->commit();
 
-            // Send activation email
             $sent = sendActivationEmail($email, $firstname, $token);
-
             echo json_encode([
-                'success'      => true,
-                'email_sent'   => $sent,
-                'user_id'      => $userId,
+                'success'    => true,
+                'email_sent' => $sent,
+                'user_id'    => $userId,
             ]);
-
         } catch (Exception $e) {
-    $conn->rollback();
-    echo json_encode([
-        'success' => false, 
-        'message' => 'Registration failed: ' . $e->getMessage()
-    ]);
-    exit;
-}
-        
+            $conn->rollback();
+            echo json_encode([
+                'success' => false,
+                'message' => 'Registration failed: ' . $e->getMessage()
+            ]);
+            exit;
+        }
         exit;
     }
 
@@ -338,7 +280,6 @@ body {
 .field input.invalid, .field select.invalid { border-color: var(--error); }
 .err-msg { font-size: .77rem; color: var(--error); margin-top: 4px; display: none; }
 .err-msg.show { display: block; }
-.field select:disabled { background: #f0f0f8; color: var(--muted); cursor: not-allowed; }
 .pw-wrap { position: relative; }
 .pw-wrap input { padding-right: 42px; }
 .pw-toggle {
@@ -381,28 +322,6 @@ body {
 .alert.show { display: block; }
 .alert-error   { background: #fff0f0; border: 1.5px solid #f5b8b8; color: var(--error); }
 .alert-success { background: #f0faf6; border: 1.5px solid #a7e5cc; color: var(--success); }
-.field select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7' viewBox='0 0 11 7'%3E%3Cpath d='M1 1l4.5 4.5L10 1' stroke='%236b7194' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 13px center; padding-right: 34px;
-}
-.sel-wrap { position: relative; }
-.sel-spinner {
-  position: absolute; right: 13px; top: 50%; transform: translateY(-50%);
-  width: 16px; height: 16px; display: none;
-  border: 2px solid var(--border); border-top-color: var(--blue);
-  border-radius: 50%; animation: spin2 .65s linear infinite; pointer-events: none;
-}
-@keyframes spin2 { to { transform: translateY(-50%) rotate(360deg); } }
-.sel-wrap.loading .sel-spinner { display: block; }
-.sel-wrap.loading select { background-image: none !important; padding-right: 38px; }
-.ncr-notice {
-  display: none; font-size: .80rem; color: var(--blue);
-  background: var(--blue-bg); border: 1.5px solid #c0cffa;
-  border-radius: 8px; padding: 7px 11px; margin-top: 5px;
-}
-.ncr-notice.show { display: block; }
-
-/* ── Success / Verification Pending screen ── */
 #success-screen { display: none; text-align: center; padding: 16px 0 4px; }
 .success-icon {
   width: 70px; height: 70px; border-radius: 50%;
@@ -419,8 +338,6 @@ body {
   padding: 10px 16px; font-size: .9rem; font-weight: 600;
   color: var(--blue-dark); margin-bottom: 20px; word-break: break-all;
 }
-
-/* Resend area */
 .resend-area { margin-top: 16px; }
 .resend-area p { font-size: .84rem; color: var(--muted); margin-bottom: 8px; }
 #resend-btn {
@@ -432,7 +349,6 @@ body {
 #resend-btn:hover:not(:disabled) { background: var(--blue-bg); border-color: var(--blue); }
 #resend-btn:disabled { opacity: .5; cursor: not-allowed; }
 #countdown { font-size: .8rem; color: var(--muted); margin-top: 6px; }
-
 .login-link { text-align: center; margin-top: 16px; font-size: .87rem; color: var(--muted); }
 .login-link a { color: var(--blue); text-decoration: none; font-weight: 500; }
 .login-link a:hover { text-decoration: underline; }
@@ -454,61 +370,21 @@ body {
       <div class="steps" id="steps-ui">
         <div class="step-item active" data-step="1">
           <div class="step-circle"><span class="step-num">1</span></div>
-          <div class="step-label">Account</div>
+          <div class="step-label">Personal</div>
         </div>
         <div class="step-item" data-step="2">
           <div class="step-circle"><span class="step-num">2</span></div>
-          <div class="step-label">Personal</div>
+          <div class="step-label">Account</div>
         </div>
         <div class="step-item" data-step="3">
           <div class="step-circle"><span class="step-num">3</span></div>
-          <div class="step-label">Address</div>
-        </div>
-        <div class="step-item" data-step="4">
-          <div class="step-circle"><span class="step-num">4</span></div>
           <div class="step-label">Confirm</div>
         </div>
       </div>
       <div id="global-alert" class="alert alert-error"></div>
 
-      <!-- STEP 1 -->
+      <!-- STEP 1: Personal -->
       <div class="panel active" id="panel-1">
-        <div class="panel-title">Create your account</div>
-        <div class="field">
-          <label>Username <span class="req">*</span></label>
-          <input type="text" id="username" autocomplete="username" placeholder="e.g. john_doe" maxlength="20">
-          <div class="err-msg" id="err-username"></div>
-        </div>
-        <div class="field">
-          <label>Email Address <span class="req">*</span></label>
-          <input type="email" id="email" autocomplete="email" placeholder="you@example.com" maxlength="254">
-          <div class="err-msg" id="err-email"></div>
-        </div>
-        <div class="field">
-          <label>Password <span class="req">*</span></label>
-          <div class="pw-wrap">
-            <input type="password" id="password" autocomplete="new-password" placeholder="8-20 characters" maxlength="20">
-            <button type="button" class="pw-toggle" onclick="togglePw('password',this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
-          </div>
-          <div class="strength-bar"><span id="sb1"></span><span id="sb2"></span><span id="sb3"></span><span id="sb4"></span></div>
-          <div class="strength-label" id="strength-label"></div>
-          <div class="err-msg" id="err-password"></div>
-        </div>
-        <div class="field">
-          <label>Confirm Password <span class="req">*</span></label>
-          <div class="pw-wrap">
-            <input type="password" id="confirm_password" autocomplete="new-password" placeholder="Re-enter your password" maxlength="20">
-            <button type="button" class="pw-toggle" onclick="togglePw('confirm_password',this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
-          </div>
-          <div class="err-msg" id="err-confirm"></div>
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-primary" onclick="goStep(1)">Continue &rarr;</button>
-        </div>
-      </div>
-
-      <!-- STEP 2 -->
-      <div class="panel" id="panel-2">
         <div class="panel-title">Personal information</div>
         <div class="form-row">
           <div class="field">
@@ -543,94 +419,49 @@ body {
           <div class="err-msg" id="err-mobile"></div>
         </div>
         <div class="btn-row">
+          <button class="btn btn-primary" onclick="goStep(1)">Continue &rarr;</button>
+        </div>
+      </div>
+
+      <!-- STEP 2: Account -->
+      <div class="panel" id="panel-2">
+        <div class="panel-title">Create your account</div>
+        <div class="field">
+          <label>Username <span class="req">*</span></label>
+          <input type="text" id="username" autocomplete="username" placeholder="e.g. john_doe" maxlength="20">
+          <div class="err-msg" id="err-username"></div>
+        </div>
+        <div class="field">
+          <label>Email Address <span class="req">*</span></label>
+          <input type="email" id="email" autocomplete="email" placeholder="you@example.com" maxlength="254">
+          <div class="err-msg" id="err-email"></div>
+        </div>
+        <div class="field">
+          <label>Password <span class="req">*</span></label>
+          <div class="pw-wrap">
+            <input type="password" id="password" autocomplete="new-password" placeholder="8-20 characters" maxlength="20">
+            <button type="button" class="pw-toggle" onclick="togglePw('password',this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+          </div>
+          <div class="strength-bar"><span id="sb1"></span><span id="sb2"></span><span id="sb3"></span><span id="sb4"></span></div>
+          <div class="strength-label" id="strength-label"></div>
+          <div class="err-msg" id="err-password"></div>
+        </div>
+        <div class="field">
+          <label>Confirm Password <span class="req">*</span></label>
+          <div class="pw-wrap">
+            <input type="password" id="confirm_password" autocomplete="new-password" placeholder="Re-enter your password" maxlength="20">
+            <button type="button" class="pw-toggle" onclick="togglePw('confirm_password',this)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+          </div>
+          <div class="err-msg" id="err-confirm"></div>
+        </div>
+        <div class="btn-row">
           <button class="btn btn-outline" onclick="prevStep(2)">&larr; Back</button>
           <button class="btn btn-primary" onclick="goStep(2)">Continue &rarr;</button>
         </div>
       </div>
 
-      <!-- STEP 3 -->
+      <!-- STEP 3: Confirm -->
       <div class="panel" id="panel-3">
-        <div class="panel-title">Customer address</div>
-        <div class="form-row">
-          <div class="field">
-            <label>Label</label>
-            <select id="address_label" onchange="handleLabelChange()">
-              <option value="Home">Home</option>
-              <option value="Work">Work</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-          <div class="field" id="custom-label-field" style="display: none;">
-            <label>Custom Label <span class="req">*</span></label>
-            <input type="text" id="custom_label" placeholder="Enter label" maxlength="50">
-            <div class="err-msg" id="err-custom_label"></div>
-          </div>
-        </div>
-        <div class="field">
-          <label>Region <span class="req">*</span></label>
-          <div class="sel-wrap" id="wrap-region">
-            <div class="sel-spinner"></div>
-            <select id="region" onchange="onRegionChange()">
-              <option value="">-- Select Region --</option>
-            </select>
-          </div>
-          <div class="err-msg" id="err-region"></div>
-        </div>
-        <div class="field" id="field-province">
-          <label>Province / Area <span class="req">*</span></label>
-          <div class="sel-wrap" id="wrap-province">
-            <div class="sel-spinner"></div>
-            <select id="province" onchange="onProvinceChange()" disabled>
-              <option value="">-- Select Province --</option>
-            </select>
-          </div>
-          <div class="err-msg" id="err-province"></div>
-        </div>
-        <div class="ncr-notice" id="ncr-notice">
-          ℹ️ NCR (Metro Manila) has no provinces. Please select a city directly below.
-        </div>
-        <div class="field">
-          <label>City / Municipality <span class="req">*</span></label>
-          <div class="sel-wrap" id="wrap-city">
-            <div class="sel-spinner"></div>
-            <select id="city" onchange="onCityChange()" disabled>
-              <option value="">-- Select City / Municipality --</option>
-            </select>
-          </div>
-          <div class="err-msg" id="err-city"></div>
-        </div>
-        <div class="field">
-          <label>Barangay <span class="req">*</span></label>
-          <div class="sel-wrap" id="wrap-barangay">
-            <div class="sel-spinner"></div>
-            <select id="barangay" disabled>
-              <option value="">-- Select Barangay --</option>
-            </select>
-          </div>
-          <div class="err-msg" id="err-barangay"></div>
-        </div>
-        <div class="form-row">
-          <div class="field">
-            <label>Block No.</label>
-            <input type="text" id="block_no" placeholder="Block 1" maxlength="20">
-          </div>
-          <div class="field">
-            <label>Lot No.</label>
-            <input type="text" id="lot_no" placeholder="Lot 24" maxlength="20">
-          </div>
-          <div class="field">
-            <label>Postal Code</label>
-            <input type="text" id="postal_code" placeholder="1428" maxlength="4" inputmode="numeric">
-          </div>
-        </div>
-        <div class="btn-row">
-          <button class="btn btn-outline" onclick="prevStep(3)">&larr; Back</button>
-          <button class="btn btn-primary" onclick="goStep(3)">Continue &rarr;</button>
-        </div>
-      </div>
-
-      <!-- STEP 4 -->
-      <div class="panel" id="panel-4">
         <div class="panel-title">Review &amp; confirm</div>
         <div class="review-box" id="review-box"></div>
         <div class="terms-box">
@@ -643,13 +474,13 @@ body {
         </div>
         <div class="err-msg" id="err-terms" style="margin-bottom:10px;"></div>
         <div class="btn-row">
-          <button class="btn btn-outline" onclick="prevStep(4)">&larr; Back</button>
+          <button class="btn btn-outline" onclick="prevStep(3)">&larr; Back</button>
           <button class="btn btn-primary" id="submit-btn" onclick="submitForm()">Create Account</button>
         </div>
       </div>
     </div>
 
-    <!-- ── Verification Pending Screen ── -->
+    <!-- Verification Pending Screen -->
     <div id="success-screen">
       <div class="success-icon">📧</div>
       <h2>Check Your Email!</h2>
@@ -657,13 +488,11 @@ body {
       <div class="email-box" id="registered-email"></div>
       <p>Click the link in the email to activate your account.<br>
          The link expires in <strong>24 hours</strong>.</p>
-
       <div class="resend-area">
         <p>Didn't receive it? Check your spam folder or resend below.</p>
         <button id="resend-btn" onclick="resendEmail()">Resend Activation Email</button>
         <div id="countdown"></div>
       </div>
-
       <div style="margin-top:22px;">
         <a href="login.php" class="btn btn-outline" style="display:inline-block;text-decoration:none;padding:10px 28px;">
           Go to Login
@@ -678,140 +507,12 @@ body {
 </div>
 
 <script>
-// ─── PSGC Cloud API ───────────────────────────────────────────────────────────
-var PSGC = 'https://psgc.cloud/api';
-var isNCR = false;
-var _cache = {};
-function psgcFetch(url) {
-  if (_cache[url]) return Promise.resolve(_cache[url]);
-  return fetch(url).then(function(r) {
-    if (!r.ok) throw new Error('Network error');
-    return r.json();
-  }).then(function(data) { _cache[url] = data; return data; });
-}
-function setLoading(wrapId, on) {
-  document.getElementById(wrapId).classList.toggle('loading', on);
-}
-function resetSelect(id, placeholder) {
-  var sel = document.getElementById(id);
-  sel.innerHTML = '<option value="">' + placeholder + '</option>';
-  sel.disabled = true;
-}
-(function initRegions() {
-  var sel = document.getElementById('region');
-  setLoading('wrap-region', true);
-  psgcFetch(PSGC + '/regions').then(function(regions) {
-    regions.sort(function(a, b) {
-      var aN = a.regionName || a.name, bN = b.regionName || b.name;
-      if (aN.indexOf('NCR') !== -1) return -1;
-      if (bN.indexOf('NCR') !== -1) return 1;
-      return aN.localeCompare(bN);
-    });
-    regions.forEach(function(r) {
-      var opt = document.createElement('option');
-      opt.value = r.code;
-      opt.textContent = (r.regionName ? r.regionName + ' \u2013 ' : '') + r.name;
-      sel.appendChild(opt);
-    });
-  }).catch(function() {
-    sel.innerHTML = '<option value="">Failed to load regions. Refresh page.</option>';
-  }).finally(function() { setLoading('wrap-region', false); });
-})();
-function onRegionChange() {
-  resetSelect('province','-- Select Province --');
-  resetSelect('city','-- Select City / Municipality --');
-  resetSelect('barangay','-- Select Barangay --');
-  clearErr('region'); clearErr('province'); clearErr('city'); clearErr('barangay');
-  var regionSel = document.getElementById('region');
-  var regionCode = regionSel.value;
-  if (!regionCode) { showProvinceField(true); isNCR = false; return; }
-  var txt = regionSel.options[regionSel.selectedIndex].textContent;
-  isNCR = (regionCode === '130000000' || txt.indexOf('NCR') !== -1 || txt.indexOf('National Capital') !== -1);
-  if (isNCR) { showProvinceField(false); loadCitiesForNCR(regionCode); }
-  else { showProvinceField(true); loadProvinces(regionCode); }
-}
-function showProvinceField(show) {
-  document.getElementById('field-province').style.display = show ? '' : 'none';
-  document.getElementById('ncr-notice').classList.toggle('show', !show);
-}
-function loadProvinces(regionCode) {
-  var provSel = document.getElementById('province');
-  setLoading('wrap-province', true);
-  psgcFetch(PSGC + '/regions/' + regionCode + '/provinces').then(function(provinces) {
-    provinces.sort(function(a,b){ return a.name.localeCompare(b.name); });
-    provinces.forEach(function(p) {
-      var opt = document.createElement('option');
-      opt.value = p.code; opt.textContent = p.name; provSel.appendChild(opt);
-    });
-    provSel.disabled = false;
-  }).catch(function() {
-    provSel.innerHTML = '<option value="">Failed to load. Try again.</option>';
-  }).finally(function() { setLoading('wrap-province', false); });
-}
-function loadCitiesForNCR(regionCode) {
-  var citySel = document.getElementById('city');
-  setLoading('wrap-city', true);
-  psgcFetch(PSGC + '/regions/' + regionCode + '/cities-municipalities').then(function(places) {
-    places.sort(function(a,b){ return a.name.localeCompare(b.name); });
-    places.forEach(function(p) {
-      var opt = document.createElement('option');
-      opt.value = p.code; opt.textContent = p.name; citySel.appendChild(opt);
-    });
-    citySel.disabled = false;
-  }).catch(function() {
-    citySel.innerHTML = '<option value="">Failed to load. Try again.</option>';
-  }).finally(function() { setLoading('wrap-city', false); });
-}
-function onProvinceChange() {
-  resetSelect('city','-- Select City / Municipality --');
-  resetSelect('barangay','-- Select Barangay --');
-  clearErr('province'); clearErr('city'); clearErr('barangay');
-  var provinceCode = document.getElementById('province').value;
-  if (!provinceCode) return;
-  var citySel = document.getElementById('city');
-  setLoading('wrap-city', true);
-  psgcFetch(PSGC + '/provinces/' + provinceCode + '/cities-municipalities').then(function(places) {
-    places.sort(function(a,b){ return a.name.localeCompare(b.name); });
-    places.forEach(function(p) {
-      var opt = document.createElement('option');
-      opt.value = p.code; opt.textContent = p.name; citySel.appendChild(opt);
-    });
-    citySel.disabled = false;
-  }).catch(function() {
-    citySel.innerHTML = '<option value="">Failed to load. Try again.</option>';
-  }).finally(function() { setLoading('wrap-city', false); });
-}
-function onCityChange() {
-  resetSelect('barangay','-- Select Barangay --');
-  clearErr('city'); clearErr('barangay');
-  var cityCode = document.getElementById('city').value;
-  if (!cityCode) return;
-  var brgySel = document.getElementById('barangay');
-  setLoading('wrap-barangay', true);
-  psgcFetch(PSGC + '/cities-municipalities/' + cityCode + '/barangays').then(function(barangays) {
-    barangays.sort(function(a,b){ return a.name.localeCompare(b.name); });
-    barangays.forEach(function(b) {
-      var opt = document.createElement('option');
-      opt.value = b.name; opt.textContent = b.name; brgySel.appendChild(opt);
-    });
-    brgySel.disabled = false;
-  }).catch(function() {
-    brgySel.innerHTML = '<option value="">Failed to load. Try again.</option>';
-  }).finally(function() { setLoading('wrap-barangay', false); });
-}
-
-// ─── Form helpers ─────────────────────────────────────────────────────────────
 var currentStep = 1;
 var registeredUserId = null;
 var registeredEmail  = '';
 var LETTERS_ONLY = /^[a-zA-Z\s\-'\.]+$/;
 function v(id) { return document.getElementById(id); }
 
-function handleLabelChange() {
-  var labelVal = v('address_label').value;
-  v('custom-label-field').style.display = labelVal === 'Other' ? 'block' : 'none';
-  if (labelVal !== 'Other') { v('custom_label').value = ''; clearErr('custom_label'); }
-}
 function showErr(id, msg) {
   var el = v('err-' + id); if (!el) return;
   el.textContent = msg; el.classList.toggle('show', !!msg);
@@ -853,13 +554,25 @@ v('mobile').addEventListener('input', function() {
   var val = this.value.replace(/\D/g, '');
   this.value = val.slice(0, 11);
 });
-v('postal_code').addEventListener('input', function() {
-  this.value = this.value.replace(/\D/g, '').slice(0, 4);
-});
 
-// ─── Validation ───────────────────────────────────────────────────────────────
 function validateStep(n) {
   if (n === 1) {
+    var ok = true;
+    ['firstname','middlename','surname','mobile'].forEach(clearErr);
+    var fn = v('firstname').value.trim(), mn = v('middlename').value.trim();
+    var sn = v('surname').value.trim(), m = v('mobile').value.trim();
+    if (!fn)             { showErr('firstname','First name is required.'); ok = false; }
+    else if (fn.length > 50) { showErr('firstname','First name must not exceed 50 characters.'); ok = false; }
+    else if (!LETTERS_ONLY.test(fn)) { showErr('firstname','First name can only contain letters.'); ok = false; }
+    if (mn && !LETTERS_ONLY.test(mn)) { showErr('middlename','Middle name can only contain letters.'); ok = false; }
+    else if (mn.length > 50)  { showErr('middlename','Middle name must not exceed 50 characters.'); ok = false; }
+    if (!sn)             { showErr('surname','Surname is required.'); ok = false; }
+    else if (sn.length > 50)  { showErr('surname','Surname must not exceed 50 characters.'); ok = false; }
+    else if (!LETTERS_ONLY.test(sn)) { showErr('surname','Surname can only contain letters.'); ok = false; }
+    if (!m || !/^09\d{9}$/.test(m)) { showErr('mobile','Enter valid mobile (09xx xxx xxxx).'); ok = false; }
+    return ok;
+  }
+  if (n === 2) {
     var ok = true;
     var u = v('username').value.trim(), e = v('email').value.trim();
     var p = v('password').value, c = v('confirm_password').value;
@@ -878,36 +591,6 @@ function validateStep(n) {
     if (ok && p !== c)  { showErr('confirm','Passwords do not match.'); ok = false; }
     return ok;
   }
-  if (n === 2) {
-    var ok = true;
-    ['firstname','middlename','surname','mobile'].forEach(clearErr);
-    var fn = v('firstname').value.trim(), mn = v('middlename').value.trim();
-    var sn = v('surname').value.trim(), m = v('mobile').value.trim();
-    if (!fn)             { showErr('firstname','First name is required.'); ok = false; }
-    else if (fn.length > 50) { showErr('firstname','First name must not exceed 50 characters.'); ok = false; }
-    else if (!LETTERS_ONLY.test(fn)) { showErr('firstname','First name can only contain letters.'); ok = false; }
-    if (mn && !LETTERS_ONLY.test(mn)) { showErr('middlename','Middle name can only contain letters.'); ok = false; }
-    else if (mn.length > 50)  { showErr('middlename','Middle name must not exceed 50 characters.'); ok = false; }
-    if (!sn)             { showErr('surname','Surname is required.'); ok = false; }
-    else if (sn.length > 50)  { showErr('surname','Surname must not exceed 50 characters.'); ok = false; }
-    else if (!LETTERS_ONLY.test(sn)) { showErr('surname','Surname can only contain letters.'); ok = false; }
-    if (!m || !/^09\d{9}$/.test(m)) { showErr('mobile','Enter valid mobile (09xx xxx xxxx).'); ok = false; }
-    return ok;
-  }
-  if (n === 3) {
-    var ok = true;
-    clearErr('custom_label');
-    if (v('address_label').value === 'Other') {
-      var cl = v('custom_label').value.trim();
-      if (!cl)          { showErr('custom_label','Custom label is required.'); ok = false; }
-      else if (cl.length > 50) { showErr('custom_label','Custom label must not exceed 50 characters.'); ok = false; }
-    }
-    if (!v('region').value)   { showErr('region','Please select a region.'); ok = false; }
-    if (!isNCR && !v('province').value) { showErr('province','Please select a province.'); ok = false; }
-    if (!v('city').value)     { showErr('city','Please select a city / municipality.'); ok = false; }
-    if (!v('barangay').value) { showErr('barangay','Please select a barangay.'); ok = false; }
-    return ok;
-  }
   return true;
 }
 
@@ -921,7 +604,7 @@ function updateUI(to) {
 }
 function goStep(from) {
   if (!validateStep(from)) return;
-  if (from === 3) buildReview();
+  if (from === 2) buildReview();
   v('panel-' + from).classList.remove('active');
   v('panel-' + (from + 1)).classList.add('active');
   currentStep = from + 1;
@@ -934,36 +617,21 @@ function prevStep(from) {
   currentStep = from - 1;
   updateUI(currentStep);
 }
-function getSelectedText(id) {
-  var sel = v(id);
-  if (!sel || !sel.options[sel.selectedIndex]) return '';
-  return sel.options[sel.selectedIndex].text;
-}
 function buildReview() {
   var fn = v('firstname').value.trim(), mn = v('middlename').value.trim();
   var sn = v('surname').value.trim(), sf = v('suffix').value;
   var fullname = [fn, mn, sn, sf].filter(Boolean).join(' ');
-  var labelVal = v('address_label').value;
-  var displayLabel = labelVal === 'Other' ? v('custom_label').value : labelVal;
   var rows = [
-    ['Username',      v('username').value],
-    ['Email',         v('email').value],
-    ['Full Name',     fullname],
-    ['Mobile',        v('mobile').value],
-    ['Address Label', displayLabel],
-    ['Region',        getSelectedText('region')],
-    ['Province',      isNCR ? 'N/A (NCR)' : getSelectedText('province')],
-    ['City / Mun.',   getSelectedText('city')],
-    ['Barangay',      v('barangay').value],
+    ['Full Name', fullname],
+    ['Mobile',    v('mobile').value],
+    ['Username',  v('username').value],
+    ['Email',     v('email').value],
   ];
-  var extras = [v('block_no').value, v('lot_no').value, v('postal_code').value].filter(Boolean).join(' / ');
-  if (extras) rows.push(['Block/Lot/Postal', extras]);
   v('review-box').innerHTML = rows.map(function(r) {
     return '<span class="review-label">' + r[0] + '</span><strong>' + (r[1] || '&mdash;') + '</strong>';
   }).join('<br>');
 }
 
-// ─── Submit ───────────────────────────────────────────────────────────────────
 function submitForm() {
   var termsEl  = v('terms');
   var errTerms = v('err-terms');
@@ -977,9 +645,6 @@ function submitForm() {
   btn.disabled = true;
   btn.textContent = 'Creating account\u2026';
 
-  var labelVal     = v('address_label').value;
-  var provinceText = isNCR ? '' : getSelectedText('province');
-
   var fd = new FormData();
   fd.append('username',         v('username').value.trim());
   fd.append('email',            v('email').value.trim());
@@ -990,16 +655,7 @@ function submitForm() {
   fd.append('surname',          v('surname').value.trim());
   fd.append('suffix',           v('suffix').value);
   fd.append('mobile',           v('mobile').value.trim());
-  fd.append('address_label',    labelVal === 'Other' ? v('custom_label').value.trim() : labelVal);
-  fd.append('region',           getSelectedText('region'));
-  fd.append('province',         provinceText);
-  fd.append('city',             getSelectedText('city'));
-  fd.append('barangay',         v('barangay').value.trim());
-  fd.append('block_no',         v('block_no').value.trim());
-  fd.append('lot_no',           v('lot_no').value.trim());
-  fd.append('postal_code',      v('postal_code').value.trim());
   fd.append('terms',            '1');
-  fd.append('is_ncr',           isNCR ? '1' : '0');
 
   fetch(window.location.href, { method: 'POST', body: fd })
     .then(function(r) { return r.json(); })
@@ -1007,12 +663,10 @@ function submitForm() {
       if (res.success) {
         registeredUserId = res.user_id;
         registeredEmail  = v('email').value.trim();
-        // Show verification pending screen
         v('form-area').style.display = 'none';
         v('login-link-row').style.display = 'none';
         v('registered-email').textContent = registeredEmail;
         v('success-screen').style.display = 'block';
-        // Start 5-min resend cooldown
         startResendCooldown(300);
       } else {
         var al = v('global-alert');
@@ -1024,7 +678,7 @@ function submitForm() {
         if (res.errors) {
           var joined = res.errors.join(' ').toLowerCase();
           if (joined.includes('username') || joined.includes('email')) {
-            prevStep(4); prevStep(3); prevStep(2);
+            prevStep(3); prevStep(2);
           }
         }
       }
@@ -1037,7 +691,6 @@ function submitForm() {
     });
 }
 
-// ─── Resend logic ─────────────────────────────────────────────────────────────
 var resendTimer = null;
 
 function startResendCooldown(seconds) {
@@ -1080,7 +733,7 @@ function resendEmail() {
     } else {
       cd.textContent = res.message || 'Failed to send. Try again.';
     }
-    startResendCooldown(300); // 5-minute cooldown
+    startResendCooldown(300);
   })
   .catch(function() {
     btn.textContent = 'Resend Activation Email';

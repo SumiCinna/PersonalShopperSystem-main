@@ -11,7 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     function redirectWithError($error_message, $role, $extra = []) {
         $_SESSION['error'] = $error_message;
-        // Pass extra data (e.g. user_id for resend) via session
         foreach ($extra as $k => $v) {
             $_SESSION[$k] = $v;
         }
@@ -41,12 +40,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (password_verify($password_input, $user['password']) || $password_input === $user['password']) {
 
-            // Role check
             if ($user['role'] !== $expected_role) {
                 redirectWithError('Access denied. You do not have permission for this portal.', $expected_role);
             }
 
-            // ── Email verification check (customers only) ─────────────────────
             if ($user['role'] === 'customer' && empty($user['email_verified'])) {
                 redirectWithError(
                     'Please verify your email address before logging in. Check your inbox for the activation link.',
@@ -55,23 +52,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
             }
 
-            // Status check
             if ($user['status'] !== 'active') {
                 redirectWithError('This account is currently ' . $user['status'] . '. Please contact support.', $expected_role);
             }
 
-            // ── Success ───────────────────────────────────────────────────────
             $_SESSION['user_id']  = $user['user_id'];
             $_SESSION['username'] = $user['username'];
             $_SESSION['role']     = $user['role'];
 
-            // Clear any leftover verification session vars
             unset($_SESSION['unverified_user_id']);
 
             $update_stmt = $conn->prepare("UPDATE users SET last_login = NOW() WHERE user_id = ?");
             $update_stmt->bind_param("i", $user['user_id']);
             $update_stmt->execute();
             $update_stmt->close();
+
+            // --- CASHIER SHIFT LOG: Record login time ---
+            if ($user['role'] === 'cashier') {
+                date_default_timezone_set('Asia/Manila');
+                $now   = date('Y-m-d H:i:s');
+                $today = date('Y-m-d');
+                $cashier_name = $user['username'];
+                $sl = $conn->prepare("INSERT INTO shift_logs (cashier_id, cashier_name, login_time, date) VALUES (?, ?, ?, ?)");
+                $sl->bind_param("isss", $user['user_id'], $cashier_name, $now, $today);
+                $sl->execute();
+                $_SESSION['shift_id'] = $conn->insert_id;
+                $sl->close();
+            }
 
             if ($user['role'] === 'admin') {
                 header("Location: ../modules/admin/dashboard.php");

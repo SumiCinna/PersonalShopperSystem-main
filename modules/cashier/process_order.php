@@ -217,7 +217,7 @@ require_once '../../includes/cashier_header.php';
 
                     <div id="online_ui" class="hidden bg-yellow-50 p-4 rounded-lg border border-yellow-200">
                         <label class="block text-sm font-bold text-yellow-900 mb-2">Reference Number</label>
-                        <input type="text" name="payment_reference" id="payment_reference" value="<?php echo ($order['balance_due'] <= 0) ? htmlspecialchars($order['online_reference'] ?? '') : ''; ?>" class="w-full bg-white border-2 border-yellow-300 text-yellow-900 rounded-lg p-4 font-mono font-bold text-lg focus:border-yellow-600 focus:ring-0 shadow-inner" placeholder="Enter Ref No.">
+                        <input type="text" name="payment_reference" id="payment_reference" maxlength="11" inputmode="numeric" pattern="\d{1,11}" value="<?php echo ($order['balance_due'] <= 0) ? htmlspecialchars($order['online_reference'] ?? '') : ''; ?>" class="w-full bg-white border-2 border-yellow-300 text-yellow-900 rounded-lg p-4 font-mono font-bold text-lg focus:border-yellow-600 focus:ring-0 shadow-inner" placeholder="Enter Ref No.">
                     </div>
                 </div>
 
@@ -273,6 +273,12 @@ require_once '../../includes/cashier_header.php';
     const cashUI = document.getElementById('cash_ui');
     const onlineUI = document.getElementById('online_ui');
     const refInput = document.getElementById('payment_reference');
+
+    if (refInput) {
+        refInput.addEventListener('input', function () {
+            this.value = this.value.replace(/\D/g, '').slice(0, 11);
+        });
+    }
 
     function togglePaymentUI() {
         if (paymentMethodSelect.value === 'cash') {

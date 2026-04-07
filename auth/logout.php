@@ -1,10 +1,51 @@
 <?php
 session_start();
+require_once '../config/config.php';
 
 $role = isset($_SESSION['role']) ? $_SESSION['role'] : 'customer';
 
-// POST = confirmed, actually log out
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    // --- CASHIER SHIFT LOG: Record logout time and total sales ---
+    if ($role === 'cashier' && isset($_SESSION['shift_id']) && isset($_SESSION['user_id'])) {
+        date_default_timezone_set('Asia/Manila');
+
+        $shift_id   = $_SESSION['shift_id'];
+        $cashier_id = $_SESSION['user_id'];
+        $now        = date('Y-m-d H:i:s');
+
+        // Get the login_time for this shift
+        $shift_stmt = $conn->prepare("SELECT login_time, date FROM shift_logs WHERE shift_id = ?");
+        $shift_stmt->bind_param("i", $shift_id);
+        $shift_stmt->execute();
+        $shift_row = $shift_stmt->get_result()->fetch_assoc();
+        $shift_stmt->close();
+
+        if ($shift_row) {
+            $login_time = $shift_row['login_time'];
+            $shift_date = $shift_row['date'];
+
+            // Sum all transactions by this cashier from login_time up to now
+            // Uses BETWEEN with exact timestamps to capture only this shift's sales
+            $sales_stmt = $conn->prepare("
+                SELECT COALESCE(SUM(amount_paid), 0) AS total
+                FROM transactions
+                WHERE cashier_id = ?
+                  AND transaction_date >= ?
+                  AND transaction_date <= ?
+            ");
+            $sales_stmt->bind_param("iss", $cashier_id, $login_time, $now);
+            $sales_stmt->execute();
+            $total_sales = $sales_stmt->get_result()->fetch_assoc()['total'];
+            $sales_stmt->close();
+
+            $upd = $conn->prepare("UPDATE shift_logs SET logout_time = ?, total_sales = ? WHERE shift_id = ?");
+            $upd->bind_param("sdi", $now, $total_sales, $shift_id);
+            $upd->execute();
+            $upd->close();
+        }
+    }
+
     $_SESSION = array();
 
     if (ini_get("session.use_cookies")) {
@@ -29,7 +70,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit();
 }
 
-// GET = show confirmation page
 $cancel_url = 'javascript:history.back()';
 ?>
 <!DOCTYPE html>

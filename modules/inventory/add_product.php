@@ -1,9 +1,7 @@
 <?php
-// modules/inventory/add_product.php
 session_start();
 require_once '../../config/config.php';
 
-// --- SECURITY CHECK ---
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
     header("Location: ../../inventory-login.php");
     exit();
@@ -11,7 +9,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
 
 $error = '';
 
-// --- HELPER: Insert a single activity log row ---
 function log_activity($conn, $user_id, $action, $product_id, $product_name, $field = null, $old = null, $new = null) {
     $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, action, product_id, product_name, field_changed, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?, ?)");
     $stmt->bind_param("ississs", $user_id, $action, $product_id, $product_name, $field, $old, $new);
@@ -19,7 +16,6 @@ function log_activity($conn, $user_id, $action, $product_id, $product_name, $fie
     $stmt->close();
 }
 
-// --- FORM PROCESSING LOGIC ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $sku              = trim($_POST['sku']);
     $name             = trim($_POST['name']);
@@ -60,7 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmt->execute()) {
                 $new_product_id = $conn->insert_id;
 
-                // --- AUDIT LOG: New product added ---
                 log_activity(
                     $conn,
                     $_SESSION['user_id'],
@@ -88,7 +83,7 @@ require_once '../../includes/inventory_header.php';
 ?>
 
 <main class="flex-1 p-8">
-    
+
     <div class="flex justify-between items-center mb-8">
         <div>
             <h1 class="text-3xl font-bold text-gray-800">Add New Product</h1>
@@ -108,26 +103,26 @@ require_once '../../includes/inventory_header.php';
 
     <div class="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
         <form method="POST" action="add_product.php" class="p-8">
-            
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                
+
                 <div class="space-y-5">
                     <h3 class="text-lg font-bold text-blue-900 border-b pb-2">Primary Details</h3>
-                    
+
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-1">SKU (Barcode) *</label>
-                        <input type="text" name="sku" required placeholder="e.g. BEAR-MILK-150G" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none uppercase font-mono">
+                        <input type="text" name="sku" required maxlength="50" placeholder="e.g. BEAR-MILK-150G" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none uppercase font-mono">
                     </div>
 
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-1">Product Name *</label>
-                        <input type="text" name="name" required placeholder="e.g. Bear Brand Powdered Milk" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        <input type="text" name="name" required maxlength="50" placeholder="e.g. Bear Brand Powdered Milk" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
                     </div>
 
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Brand</label>
-                            <input type="text" name="brand" placeholder="e.g. Nestle" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <input type="text" name="brand" maxlength="50" placeholder="e.g. Nestle" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Category *</label>
@@ -149,7 +144,16 @@ require_once '../../includes/inventory_header.php';
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Size/Weight Value</label>
-                            <input type="number" step="0.01" name="unit_value" placeholder="e.g. 150" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <input type="text" inputmode="decimal" name="unit_value" placeholder="e.g. 150.00" pattern="^\d{1,5}(\.\d{1,2})?$"
+                                oninput="
+                                    var v = this.value;
+                                    if (/^\d{0,5}(\.\d{0,2})?$/.test(v)) {
+                                        this.dataset.prev = v;
+                                    } else {
+                                        this.value = this.dataset.prev || '';
+                                    }
+                                "
+                                class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Unit of Measure</label>
@@ -168,19 +172,45 @@ require_once '../../includes/inventory_header.php';
 
                 <div class="space-y-5">
                     <h3 class="text-lg font-bold text-blue-900 border-b pb-2">Pricing & Inventory</h3>
-                    
+
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Supplier Cost Price (₱) *</label>
-                            <input type="number" step="0.01" min="0" name="cost_price" required placeholder="0.00" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <input type="text" inputmode="decimal" name="cost_price" required placeholder="0.00" pattern="^\d{1,5}(\.\d{1,2})?$"
+                                oninput="
+                                    var v = this.value;
+                                    if (/^\d{0,5}(\.\d{0,2})?$/.test(v)) {
+                                        this.dataset.prev = v;
+                                    } else {
+                                        this.value = this.dataset.prev || '';
+                                    }
+                                "
+                                class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-gray-700 mb-1">Regular Selling Price (₱)</label>
-                            <input type="number" step="0.01" name="price" required class="w-full bg-white border border-gray-300 rounded p-3" placeholder="0.00">
+                            <input type="text" inputmode="decimal" name="price" required placeholder="0.00" pattern="^\d{1,5}(\.\d{1,2})?$"
+                                oninput="
+                                    var v = this.value;
+                                    if (/^\d{0,5}(\.\d{0,2})?$/.test(v)) {
+                                        this.dataset.prev = v;
+                                    } else {
+                                        this.value = this.dataset.prev || '';
+                                    }
+                                "
+                                class="w-full bg-white border border-gray-300 rounded p-3">
                         </div>
                         <div class="col-span-2">
                             <label class="block text-sm font-bold text-red-600 mb-1">Promo/Discount Price (₱) - Optional</label>
-                            <input type="number" step="0.01" name="discount_price" class="w-full bg-red-50 border border-red-300 rounded p-3 placeholder-red-300" placeholder="Leave blank if no promo">
+                            <input type="number" step="0.01" min="0" max="99999.99" name="discount_price"
+                                oninput="
+                                    var parts = this.value.split('.');
+                                    if(parts[0].length > 5) parts[0] = parts[0].slice(0,5);
+                                    if(parts[1] !== undefined && parts[1].length > 2) parts[1] = parts[1].slice(0,2);
+                                    this.value = parts.join('.');
+                                    if(parseFloat(this.value) > 99999.99) this.value = 99999.99;
+                                "
+                                class="w-full bg-red-50 border border-red-300 rounded p-3 placeholder-red-300" placeholder="Leave blank if no promo">
                             <p class="text-[10px] text-gray-500 mt-1">If filled, the regular price will be slashed on the shop page.</p>
                         </div>
                     </div>
@@ -188,11 +218,15 @@ require_once '../../includes/inventory_header.php';
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Initial Stock *</label>
-                            <input type="number" name="stock" required value="0" min="0" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <input type="number" name="stock" required value="0" min="0" max="99999"
+                                oninput="if(this.value.length > 5) this.value = this.value.slice(0,5); if(parseInt(this.value) > 99999) this.value = 99999;"
+                                class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none">
                         </div>
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Low Stock Warning At *</label>
-                            <input type="number" name="low_stock_threshold" required value="10" min="0" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none text-red-600 font-semibold">
+                            <input type="number" name="low_stock_threshold" required value="10" min="0" max="99999"
+                                oninput="if(this.value.length > 5) this.value = this.value.slice(0,5); if(parseInt(this.value) > 99999) this.value = 99999;"
+                                class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none text-red-600 font-semibold">
                         </div>
                     </div>
 
@@ -203,7 +237,7 @@ require_once '../../includes/inventory_header.php';
                             <option value="inactive">Inactive (Hidden)</option>
                         </select>
                     </div>
-                    
+
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-1">Product Image URL</label>
                         <input type="url" name="image_url" placeholder="https://example.com/image.jpg" class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm text-gray-500">
@@ -213,7 +247,7 @@ require_once '../../includes/inventory_header.php';
 
             <div class="mt-8">
                 <label class="block text-sm font-semibold text-gray-700 mb-1">Product Description</label>
-                <textarea name="description" rows="3" placeholder="Write a short description of the item..." class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
+                <textarea name="description" rows="3" maxlength="100" placeholder="Write a short description of the item..." class="w-full px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"></textarea>
             </div>
 
             <div class="mt-8 pt-6 border-t flex justify-end">

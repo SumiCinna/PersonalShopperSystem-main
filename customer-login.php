@@ -80,6 +80,12 @@ unset($_SESSION['unverified_user_id']);
             <div class="mt-4 text-center">
                 <a href="auth/register.php" class="text-blue-600 hover:underline">Don't have an account? Sign up</a>
             </div>
+
+            <div class="mt-3 text-center">
+                <a href="index.php" class="inline-block w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-3 rounded-lg transition border border-gray-300">
+                    Back to Home
+                </a>
+            </div>
         </form>
     </div>
 

@@ -27,16 +27,48 @@ date_default_timezone_set('Asia/Manila');
 $today = date('Y-m-d');
 $now_ts = time();
 
-// 1. Shift Sales Today
-$stmt = $conn->prepare("SELECT SUM(amount_paid) as total_sales FROM transactions WHERE cashier_id = ? AND DATE(transaction_date) = ?");
-$stmt->bind_param("is", $cashier_id, $today);
+// --- Get the login_time for this current shift ---
+$shift_login_time = null;
+if (isset($_SESSION['shift_id'])) {
+    $sl_stmt = $conn->prepare("SELECT login_time FROM shift_logs WHERE shift_id = ?");
+    $sl_stmt->bind_param("i", $_SESSION['shift_id']);
+    $sl_stmt->execute();
+    $sl_row = $sl_stmt->get_result()->fetch_assoc();
+    $sl_stmt->close();
+    if ($sl_row) {
+        $shift_login_time = $sl_row['login_time'];
+    }
+}
+
+// Fallback: if no shift_id in session, use start of today
+if (!$shift_login_time) {
+    $shift_login_time = $today . ' 00:00:00';
+}
+
+$now_datetime = date('Y-m-d H:i:s');
+
+// 1. Shift Sales — scoped to current shift (login_time → now), not just "today"
+$stmt = $conn->prepare("
+    SELECT COALESCE(SUM(amount_paid), 0) AS total_sales
+    FROM transactions
+    WHERE cashier_id = ?
+      AND transaction_date >= ?
+      AND transaction_date <= ?
+");
+$stmt->bind_param("iss", $cashier_id, $shift_login_time, $now_datetime);
 $stmt->execute();
 $sales_today = $stmt->get_result()->fetch_assoc()['total_sales'] ?? 0;
 $stmt->close();
 
-// 2. Orders Completed Today
-$stmt = $conn->prepare("SELECT COUNT(*) as count FROM orders WHERE processed_by = ? AND order_status = 'completed' AND DATE(created_at) = ?");
-$stmt->bind_param("is", $cashier_id, $today);
+// 2. Orders Completed — scoped to current shift login time
+$stmt = $conn->prepare("
+    SELECT COUNT(*) AS count
+    FROM orders
+    WHERE processed_by = ?
+      AND order_status = 'completed'
+      AND created_at >= ?
+");
+$stmt->bind_param("is", $cashier_id, $shift_login_time);
 $stmt->execute();
 $customers_served = $stmt->get_result()->fetch_assoc()['count'];
 $stmt->close();
@@ -75,9 +107,6 @@ $unavailable_result = $conn->query("
     ORDER BY p.stock ASC
 ");
 $unavailable_items = $unavailable_result->fetch_all(MYSQLI_ASSOC);
-
-// 7. Last known pending count (for incoming order alert via JS polling)
-// We pass the current count to JS, which polls and compares
 
 $page_title = 'Shift Overview';
 require_once '../../includes/cashier_header.php'; 
@@ -313,23 +342,13 @@ let alertDismissed = false;
 
 async function pollPendingQueue() {
     try {
-        const res = await fetch('get_pending_count.php?t=' + Date.now()); // cache-bust
+        const res = await fetch('get_pending_count.php?t=' + Date.now());
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         const newCount = parseInt(data.count);
 
-        // Update all count displays
         document.querySelectorAll('.pendingCountLive').forEach(el => el.textContent = newCount);
 
-        // Flash the pending card green briefly on update
-        const card = document.getElementById('pendingCountDisplay');
-        if (card && newCount !== knownPendingCount) {
-            card.closest('.bg-white').style.transition = 'background 0.3s';
-            card.closest('.bg-white').style.background = '#f0fdf4';
-            setTimeout(() => card.closest('.bg-white').style.background = '', 1500);
-        }
-
-        // Show alert banner if count went UP
         if (newCount > knownPendingCount && !alertDismissed) {
             const diff = newCount - knownPendingCount;
             document.getElementById('incomingAlertText').textContent =
@@ -338,18 +357,15 @@ async function pollPendingQueue() {
             try { new Audio('../../assets/sounds/ding.mp3').play(); } catch(e) {}
         }
 
-        // Hide banner if queue is now empty
         if (newCount === 0) {
             document.getElementById('incomingOrderAlert').classList.add('hidden');
         }
 
-        // Update live indicator dot color
         const dot = document.getElementById('pollDot');
         if (dot) { dot.style.background = '#22c55e'; setTimeout(() => dot.style.background = '#94a3b8', 1000); }
 
         knownPendingCount = newCount;
     } catch(e) {
-        // Show poll error dot in red
         const dot = document.getElementById('pollDot');
         if (dot) dot.style.background = '#ef4444';
         console.warn('Poll failed:', e);
@@ -362,7 +378,6 @@ function dismissIncomingAlert() {
     setTimeout(() => { alertDismissed = false; }, 60000);
 }
 
-// Poll immediately on load, then every 15s
 pollPendingQueue();
 setInterval(pollPendingQueue, 15000);
 
@@ -387,7 +402,6 @@ function saveSubNote(input, trackingNo, productName) {
     const p = input.nextElementSibling;
     p.textContent = `✓ Note saved for ${trackingNo}: "${note}"`;
     p.style.color = '#16a34a';
-    // Store in sessionStorage so it persists during the shift
     sessionStorage.setItem(`sub_note_${trackingNo}_${productName}`, note);
 }
 </script>
