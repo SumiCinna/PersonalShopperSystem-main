@@ -489,6 +489,14 @@ LOCK TABLES `wishlist` WRITE;
 INSERT INTO `wishlist` VALUES (6,1,3,'2026-02-25 15:38:47'),(9,7,29,'2026-03-17 16:36:16'),(10,13,52,'2026-04-06 12:37:46'),(11,13,5,'2026-04-06 12:37:46');
 /*!40000 ALTER TABLE `wishlist` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Dumping events for database 'pss_db'
+--
+
+--
+-- Dumping routines for database 'pss_db'
+--
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -499,4 +507,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-04-07 10:21:45
+-- Dump completed on 2026-04-07 10:22:14
