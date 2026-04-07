@@ -13,6 +13,15 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
         exit();
     }
 }
+
+require_once 'config/config.php';
+
+$new_arrivals_query = "SELECT product_id, name, brand, category, price, discount_price, stock, image_url
+                       FROM products
+                       WHERE status = 'active' AND stock > 0
+                       ORDER BY product_id DESC
+                       LIMIT 4";
+$new_arrivals_result = $conn->query($new_arrivals_query);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -109,6 +118,67 @@ if(isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
             </div>
         </div>
     </header>
+
+    <section class="py-16 bg-white border-y border-slate-200">
+        <div class="container mx-auto px-6">
+            <div class="flex justify-between items-end mb-8 border-b border-slate-200 pb-4">
+                <div>
+                    <h2 class="text-3xl font-black text-slate-900 tracking-tight">New Arrivals</h2>
+                    <p class="text-slate-500 mt-1">Fresh products recently added to our shelves.</p>
+                </div>
+                <a href="customer-login.php" class="hidden sm:inline-flex text-blue-600 font-bold hover:text-blue-800 items-center transition">
+                    View All Products
+                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                </a>
+            </div>
+
+            <?php if ($new_arrivals_result && $new_arrivals_result->num_rows > 0): ?>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <?php while ($product = $new_arrivals_result->fetch_assoc()): ?>
+                        <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300 group">
+                            <div class="h-48 bg-slate-100 flex justify-center items-center overflow-hidden relative">
+                                <div class="absolute top-2 left-2 bg-yellow-400 text-blue-900 text-[10px] font-black px-2 py-1 rounded z-10 uppercase tracking-widest shadow-sm">NEW</div>
+
+                                <?php if (!empty($product['image_url'])): ?>
+                                    <img src="<?php echo htmlspecialchars($product['image_url']); ?>" alt="<?php echo htmlspecialchars($product['name']); ?>" class="object-contain h-full w-full p-2 group-hover:scale-105 transition-transform duration-500">
+                                <?php else: ?>
+                                    <svg class="w-12 h-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="p-5 flex-1 flex flex-col">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1"><?php echo htmlspecialchars($product['category']); ?></div>
+                                <h3 class="font-bold text-slate-900 leading-tight mb-1"><?php echo htmlspecialchars($product['name']); ?></h3>
+                                <p class="text-xs text-slate-500 mb-3"><?php echo htmlspecialchars($product['brand']); ?></p>
+
+                                <div class="mt-auto mb-4">
+                                    <?php if ($product['discount_price'] > 0 && $product['discount_price'] < $product['price']): ?>
+                                        <p class="text-xs text-slate-400 line-through font-semibold">₱<?php echo number_format($product['price'], 2); ?></p>
+                                        <p class="text-2xl font-black text-red-600">₱<?php echo number_format($product['discount_price'], 2); ?></p>
+                                    <?php else: ?>
+                                        <p class="text-2xl font-black text-green-700">₱<?php echo number_format($product['price'], 2); ?></p>
+                                    <?php endif; ?>
+                                </div>
+
+                                <a href="customer-login.php" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition flex justify-center items-center">
+                                    <svg class="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
+                                    Add to Cart
+                                </a>
+                            </div>
+                        </div>
+                    <?php endwhile; ?>
+                </div>
+            <?php else: ?>
+                <div class="bg-white border border-slate-200 rounded-xl p-8 text-center">
+                    <p class="text-slate-500">No new arrivals yet. Please check back soon.</p>
+                </div>
+            <?php endif; ?>
+
+            <div class="mt-8 text-center sm:hidden">
+                <a href="customer-login.php" class="inline-block bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3 px-8 rounded-lg transition w-full">View All Products</a>
+            </div>
+        </div>
+    </section>
 
     <section id="features" class="py-24 bg-slate-50">
         <div class="container mx-auto px-6">

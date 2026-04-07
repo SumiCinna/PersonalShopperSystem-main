@@ -74,16 +74,14 @@ $seconds_since = time() - $db_time;
 // ── Generate token ────────────────────────────────────────────────────────────
 $token      = bin2hex(random_bytes(32));
 $token_hash = hash('sha256', $token);
-$expires_at = date('Y-m-d H:i:s', time() + 120);
-
 // ── Clear old tokens, insert new ─────────────────────────────────────────────
 $del = $conn->prepare("DELETE FROM password_resets WHERE user_id = ?");
 $del->bind_param('i', $user['user_id']);
 $del->execute();
 $del->close();
 
-$ins = $conn->prepare("INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?, ?, ?)");
-$ins->bind_param('iss', $user['user_id'], $token_hash, $expires_at);
+$ins = $conn->prepare("INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (?, ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 MINUTE))");
+$ins->bind_param('is', $user['user_id'], $token_hash);
 $ins->execute();
 $ins->close();
 

@@ -75,14 +75,13 @@ if (empty($token_raw)) {
     $error = 'Invalid or missing reset token.';
 } else {
     $token_hash = hash('sha256', $token_raw);
-    $now        = date('Y-m-d H:i:s');
 
     $stmt = $conn->prepare(
         "SELECT pr.reset_id, pr.user_id, pr.expires_at, pr.used
          FROM password_resets pr
-         WHERE pr.token_hash = ? AND pr.used = 0 AND pr.expires_at > ?"
+     WHERE pr.token_hash = ? AND pr.used = 0 AND pr.expires_at > UTC_TIMESTAMP()"
     );
-    $stmt->bind_param('ss', $token_hash, $now);
+  $stmt->bind_param('s', $token_hash);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -112,12 +111,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $valid) {
     } elseif ($new_pw !== $confirm_pw) {
         $error = 'Passwords do not match.';
     } else {
-        $now  = date('Y-m-d H:i:s');
         $stmt = $conn->prepare(
             "SELECT pr.reset_id, pr.user_id FROM password_resets pr
-             WHERE pr.token_hash = ? AND pr.used = 0 AND pr.expires_at > ?"
+       WHERE pr.token_hash = ? AND pr.used = 0 AND pr.expires_at > UTC_TIMESTAMP()"
         );
-        $stmt->bind_param('ss', $token_hash, $now);
+    $stmt->bind_param('s', $token_hash);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();

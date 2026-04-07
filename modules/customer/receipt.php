@@ -106,16 +106,87 @@ require_once '../../includes/customer_header.php';
     text-decoration: underline;
 }
 
+.receipt-plain .receipt-content .receipt-section {
+    width: 100%;
+}
+
+.receipt-plain .receipt-content .amount-row {
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.receipt-plain .receipt-content .amount-value {
+    min-width: 110px;
+    text-align: right;
+}
+
 @media print {
+    @page {
+        size: A4 portrait;
+        margin: 4mm;
+    }
+
     nav, footer, .no-print { display: none !important; }
     .receipt-plain { padding: 0 !important; background: #fff !important; }
+    .receipt-plain > .max-w-2xl > :not(.receipt-card) { display: none !important; }
+
     .receipt-plain .receipt-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
         border: 1px solid #000 !important;
         box-shadow: none !important;
         border-radius: 0 !important;
     }
+
     .receipt-plain .receipt-mono {
         border-top: 1px solid #000 !important;
+        font-size: 10px !important;
+        line-height: 1.15 !important;
+    }
+
+    .receipt-plain .receipt-content {
+        padding: 6px !important;
+    }
+
+    .receipt-plain .receipt-content table th,
+    .receipt-plain .receipt-content table td {
+        padding: 2px 4px !important;
+        font-size: 9px !important;
+    }
+
+    .receipt-plain .receipt-content .text-3xl { font-size: 1.1rem !important; }
+    .receipt-plain .receipt-content .text-2xl { font-size: 1rem !important; }
+    .receipt-plain .receipt-content .text-xl { font-size: 0.88rem !important; }
+    .receipt-plain .receipt-content .text-lg { font-size: 0.8rem !important; }
+    .receipt-plain .receipt-content .text-base { font-size: 0.72rem !important; }
+    .receipt-plain .receipt-content .text-sm { font-size: 0.64rem !important; }
+    .receipt-plain .receipt-content .text-xs { font-size: 0.58rem !important; }
+
+    .receipt-plain .receipt-content .space-y-2 > :not([hidden]) ~ :not([hidden]) {
+        margin-top: 0.18rem !important;
+    }
+
+    .receipt-plain .receipt-content .gap-5 { gap: 0.35rem !important; }
+    .receipt-plain .receipt-content .gap-4,
+    .receipt-plain .receipt-content .gap-3,
+    .receipt-plain .receipt-content .gap-2 { gap: 0.2rem !important; }
+
+    .receipt-plain .receipt-content .p-6 { padding: 0.35rem !important; }
+    .receipt-plain .receipt-content .p-5,
+    .receipt-plain .receipt-content .p-4 { padding: 0.3rem !important; }
+    .receipt-plain .receipt-content .py-4,
+    .receipt-plain .receipt-content .py-3 { padding-top: 0.2rem !important; padding-bottom: 0.2rem !important; }
+    .receipt-plain .receipt-content .px-5,
+    .receipt-plain .receipt-content .px-4 { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
+
+    .receipt-plain .receipt-content .mb-4,
+    .receipt-plain .receipt-content .mb-3,
+    .receipt-plain .receipt-content .mt-4,
+    .receipt-plain .receipt-content .mt-2,
+    .receipt-plain .receipt-content .mt-1 {
+        margin-top: 0.15rem !important;
+        margin-bottom: 0.15rem !important;
     }
 }
 </style>
@@ -150,25 +221,25 @@ require_once '../../includes/customer_header.php';
         <div class="receipt-mono">
         <!-- Header -->
         <div class="bg-gradient-to-r from-blue-700 to-indigo-700 px-8 py-6 text-white">
-            <div class="flex justify-between items-start">
+            <div class="flex justify-between items-center gap-6">
                 <div>
                     <p class="text-blue-200 text-xs font-bold uppercase tracking-widest mb-1">Official Receipt</p>
                     <p class="text-3xl font-black tracking-tight"><?php echo htmlspecialchars($order['tracking_no']); ?></p>
                     <p class="text-blue-200 text-sm mt-1"><?php echo $order_date; ?></p>
                 </div>
-                <div class="text-right">
-                    <span class="inline-block bg-white bg-opacity-20 text-white text-xs font-bold px-3 py-1 rounded-full mb-2">
+                <div class="text-right min-w-[170px] flex flex-col items-end justify-center leading-tight">
+                    <span class="inline-block bg-white bg-opacity-20 text-white text-xs font-bold px-3 py-1 rounded-full text-right whitespace-nowrap">
                         <?php echo $pt_label; ?>
                     </span>
-                    <p class="text-blue-100 text-xs">via <?php echo ucfirst($payment_method_display); ?></p>
+                    <p class="text-blue-100 text-xs text-right mt-1">via <?php echo ucfirst($payment_method_display); ?></p>
                 </div>
             </div>
         </div>
 
-        <div class="px-8 py-8 space-y-8">
+        <div class="receipt-content px-5 py-5 space-y-2">
 
             <!-- ── Status Row ──────────────────────────────────────────────── -->
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="receipt-section grid grid-cols-1 sm:grid-cols-3 gap-5">
                 <div class="bg-blue-50 rounded-xl p-4 border border-blue-100 text-center">
                     <p class="text-xs font-bold text-blue-400 uppercase tracking-widest mb-1">Order Status</p>
                     <p class="text-base font-black text-blue-900 capitalize"><?php echo ucfirst($order['order_status']); ?></p>
@@ -185,7 +256,7 @@ require_once '../../includes/customer_header.php';
             </div>
 
             <!-- ── Payment Breakdown ──────────────────────────────────────── -->
-            <div>
+            <div class="receipt-section">
                 <h3 class="font-black text-gray-800 text-base mb-4 flex items-center gap-2">
                     <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
@@ -224,12 +295,12 @@ require_once '../../includes/customer_header.php';
                 <div class="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
                     <div class="divide-y divide-gray-200">
 
-                        <div class="flex justify-between items-center px-5 py-3">
+                        <div class="amount-row flex justify-between items-center px-5 py-3">
                             <span class="text-sm text-gray-600">Items Subtotal</span>
-                            <span class="font-semibold text-gray-800">₱<?php echo number_format($order['total_amount'], 2); ?></span>
+                            <span class="amount-value font-semibold text-gray-800">₱<?php echo number_format($order['total_amount'], 2); ?></span>
                         </div>
 
-                        <div class="flex justify-between items-center px-5 py-3 bg-green-50">
+                        <div class="amount-row flex justify-between items-center px-5 py-3 bg-green-50">
                             <div>
                                 <p class="text-sm font-bold text-green-700">
                                     ✓ Paid Online
@@ -237,27 +308,27 @@ require_once '../../includes/customer_header.php';
                                 </p>
                                 <p class="text-xs text-green-600">via <?php echo ucfirst($payment_method_display); ?></p>
                             </div>
-                            <span class="font-black text-green-700 text-lg">₱<?php echo number_format($order['upfront_payment'], 2); ?></span>
+                            <span class="amount-value font-black text-green-700 text-lg">₱<?php echo number_format($order['upfront_payment'], 2); ?></span>
                         </div>
 
                         <?php if ($has_balance): ?>
-                        <div class="flex justify-between items-center px-5 py-3 bg-orange-50">
+                        <div class="amount-row flex justify-between items-center px-5 py-3 bg-orange-50">
                             <div>
                                 <p class="text-sm font-bold text-orange-700">⚠ Balance Due at Store Pickup</p>
                                 <p class="text-xs text-orange-500">Pay the cashier when you collect your order</p>
                             </div>
-                            <span class="font-black text-orange-700 text-lg">₱<?php echo number_format($order['balance_due'], 2); ?></span>
+                            <span class="amount-value font-black text-orange-700 text-lg">₱<?php echo number_format($order['balance_due'], 2); ?></span>
                         </div>
                         <?php else: ?>
-                        <div class="flex justify-between items-center px-5 py-3 bg-green-50">
+                        <div class="amount-row flex justify-between items-center px-5 py-3 bg-green-50">
                             <span class="text-sm font-bold text-green-600">No balance due at store</span>
-                            <span class="font-black text-green-600">₱0.00</span>
+                            <span class="amount-value font-black text-green-600">₱0.00</span>
                         </div>
                         <?php endif; ?>
 
-                        <div class="flex justify-between items-center px-5 py-4 bg-white">
+                        <div class="amount-row flex justify-between items-center px-5 py-4 bg-white">
                             <span class="text-base font-black text-gray-900">Order Total</span>
-                            <span class="text-2xl font-black text-blue-700">₱<?php echo number_format($order['total_amount'], 2); ?></span>
+                            <span class="amount-value text-2xl font-black text-blue-700">₱<?php echo number_format($order['total_amount'], 2); ?></span>
                         </div>
                     </div>
                 </div>
@@ -283,7 +354,7 @@ require_once '../../includes/customer_header.php';
             </div>
 
             <!-- ── Pickup Details ─────────────────────────────────────────── -->
-            <div class="bg-amber-50 border border-amber-200 rounded-xl p-6">
+            <div class="receipt-section bg-amber-50 border border-amber-200 rounded-xl p-6">
                 <h3 class="font-black text-gray-800 mb-3 flex items-center gap-2">
                     <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -295,7 +366,7 @@ require_once '../../includes/customer_header.php';
             </div>
 
             <!-- ── Order Items ────────────────────────────────────────────── -->
-            <div>
+            <div class="receipt-section">
                 <h3 class="font-black text-gray-800 mb-4 flex items-center gap-2">
                     <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
@@ -332,7 +403,7 @@ require_once '../../includes/customer_header.php';
             </div>
 
             <!-- ── Important Notes ────────────────────────────────────────── -->
-            <div class="bg-blue-50 border border-blue-200 rounded-xl p-6">
+            <div class="receipt-section bg-blue-50 border border-blue-200 rounded-xl p-6">
                 <h4 class="font-black text-blue-900 mb-3 flex items-center gap-2">
                     <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
