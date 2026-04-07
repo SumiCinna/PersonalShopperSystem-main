@@ -70,18 +70,57 @@ require_once '../../includes/customer_header.php';
 ?>
 
 <style>
+/* Plain monochrome styling only for the receipt content area */
+.receipt-plain .receipt-mono {
+    border-top: 1px solid #000;
+}
+
+.receipt-plain .receipt-mono,
+.receipt-plain .receipt-mono * {
+    color: #000 !important;
+}
+
+.receipt-plain .receipt-mono [class*="bg-"],
+.receipt-plain .receipt-mono [class*="from-"],
+.receipt-plain .receipt-mono [class*="to-"] {
+    background: #fff !important;
+}
+
+.receipt-plain .receipt-mono [class*="border-"] {
+    border-color: #000 !important;
+}
+
+.receipt-plain .receipt-mono .divide-y > :not([hidden]) ~ :not([hidden]),
+.receipt-plain .receipt-mono .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+.receipt-plain .receipt-mono .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+    border-color: #000 !important;
+}
+
+.receipt-plain .receipt-mono th,
+.receipt-plain .receipt-mono td {
+    border-color: #000 !important;
+}
+
+.receipt-plain .receipt-mono a {
+    color: #000 !important;
+    text-decoration: underline;
+}
+
 @media print {
     nav, footer, .no-print { display: none !important; }
-    main { padding: 0; background: white !important; }
-    .shadow-lg, .shadow-sm { box-shadow: none !important; }
-    .rounded-2xl { border-radius: 0 !important; }
-    .bg-gradient-to-r, .bg-gradient-to-br { background: white !important; color: #111 !important; }
-    .text-white { color: #111 !important; }
-    .text-blue-100, .text-blue-200, .text-green-100 { color: #555 !important; }
+    .receipt-plain { padding: 0 !important; background: #fff !important; }
+    .receipt-plain .receipt-card {
+        border: 1px solid #000 !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+    }
+    .receipt-plain .receipt-mono {
+        border-top: 1px solid #000 !important;
+    }
 }
 </style>
 
-<main class="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-12 px-4">
+<main class="receipt-plain min-h-screen bg-white py-6 px-4">
 <div class="max-w-2xl mx-auto">
 
     <!-- ── Payment Success Banner ─────────────────────────────────────────── -->
@@ -106,8 +145,9 @@ require_once '../../includes/customer_header.php';
     </div>
 
     <!-- ── Main Receipt Card ──────────────────────────────────────────────── -->
-    <div class="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
+    <div class="receipt-card bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden">
 
+        <div class="receipt-mono">
         <!-- Header -->
         <div class="bg-gradient-to-r from-blue-700 to-indigo-700 px-8 py-6 text-white">
             <div class="flex justify-between items-start">
@@ -330,7 +370,8 @@ require_once '../../includes/customer_header.php';
                 </ul>
             </div>
 
-        </div><!-- /px-8 py-8 -->
+    </div><!-- /px-8 py-8 -->
+    </div><!-- /receipt-mono -->
 
         <!-- Footer Actions -->
         <div class="px-8 py-5 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row gap-3 justify-end no-print">

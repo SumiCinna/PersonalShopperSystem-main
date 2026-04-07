@@ -162,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtProfile->close();
 
             $token     = bin2hex(random_bytes(32));
-            $expiresAt = date('Y-m-d H:i:s', strtotime('+24 hours'));
+            $expiresAt = date('Y-m-d H:i:s', strtotime('+2 minutes'));
             $conn->query("DELETE FROM email_verifications WHERE user_id = $userId");
             $stmtTok = $conn->prepare(
                 'INSERT INTO email_verifications (user_id, token, expires_at, created_at)
@@ -487,7 +487,7 @@ body {
       <p>We sent an activation link to:</p>
       <div class="email-box" id="registered-email"></div>
       <p>Click the link in the email to activate your account.<br>
-         The link expires in <strong>24 hours</strong>.</p>
+         The link expires in <strong>2 minutes</strong>.</p>
       <div class="resend-area">
         <p>Didn't receive it? Check your spam folder or resend below.</p>
         <button id="resend-btn" onclick="resendEmail()">Resend Activation Email</button>
@@ -667,7 +667,7 @@ function submitForm() {
         v('login-link-row').style.display = 'none';
         v('registered-email').textContent = registeredEmail;
         v('success-screen').style.display = 'block';
-        startResendCooldown(300);
+        startResendCooldown(30);
       } else {
         var al = v('global-alert');
         var msgs = res.errors ? res.errors : [res.message];
@@ -733,7 +733,7 @@ function resendEmail() {
     } else {
       cd.textContent = res.message || 'Failed to send. Try again.';
     }
-    startResendCooldown(300);
+    startResendCooldown(30);
   })
   .catch(function() {
     btn.textContent = 'Resend Activation Email';

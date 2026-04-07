@@ -62,8 +62,8 @@ if ($cool_row) {
     // Convert DB time (which is UTC) to timestamp, then compare with PHP Manila time
     $db_time      = strtotime($cool_row['created_at']);
 $seconds_since = time() - $db_time;
-    if ($seconds_since < 180) {
-        $seconds_left = 180 - $seconds_since;
+    if ($seconds_since < 30) {
+        $seconds_left = 30 - $seconds_since;
         $mins = floor($seconds_left / 60);
         $secs = $seconds_left % 60;
         $wait = $mins > 0 ? "{$mins}m {$secs}s" : "{$secs}s";
@@ -74,7 +74,7 @@ $seconds_since = time() - $db_time;
 // ── Generate token ────────────────────────────────────────────────────────────
 $token      = bin2hex(random_bytes(32));
 $token_hash = hash('sha256', $token);
-$expires_at = date('Y-m-d H:i:s', time() + 3600);
+$expires_at = date('Y-m-d H:i:s', time() + 120);
 
 // ── Clear old tokens, insert new ─────────────────────────────────────────────
 $del = $conn->prepare("DELETE FROM password_resets WHERE user_id = ?");
@@ -127,7 +127,7 @@ curl_close($ch);
 error_log("[ForgotPW] To: {$user['email']} | HTTP: $http_status | Response: $response" . ($curl_error ? " | cURL: $curl_error" : ''));
 
 if ($http_status === 200) {
-    redirectBack('success', 'A password reset link has been sent to your email. It expires in 1 hour.');
+    redirectBack('success', 'A password reset link has been sent to your email. It expires in 2 minutes.');
 } else {
     redirectBack('error', "Email failed (HTTP $http_status): $response");
 }

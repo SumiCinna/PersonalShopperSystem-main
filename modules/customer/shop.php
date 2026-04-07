@@ -69,6 +69,19 @@ $page_title = 'Shop Groceries';
 require_once '../../includes/customer_header.php';
 ?>
 
+<style>
+    .qty-input::-webkit-outer-spin-button,
+    .qty-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+
+    .qty-input[type=number] {
+        -moz-appearance: textfield;
+        appearance: textfield;
+    }
+</style>
+
 <main class="bg-gray-50 min-h-screen py-8">
     <div class="container mx-auto px-4 lg:px-8 max-w-7xl">
         
@@ -158,9 +171,12 @@ require_once '../../includes/customer_header.php';
                                                 <p class="text-2xl font-black text-green-700">₱<?php echo number_format($product['price'], 2); ?></p>
                                             <?php endif; ?>
                                         </div>
-                                        <?php if ($product['stock'] > 0 && $product['stock'] <= 10): ?>
-                                            <span class="text-[10px] font-bold text-orange-600 bg-orange-100 px-2 py-1 rounded">Only <?php echo $product['stock']; ?> left!</span>
-                                        <?php elseif ($product['stock'] <= 0): ?>
+                                        <?php if ($product['stock'] > 0): ?>
+                                            <?php $stock_class = $product['stock'] <= 10 ? 'text-orange-600 bg-orange-100' : 'text-emerald-700 bg-emerald-100'; ?>
+                                            <span class="text-[13px] font-bold px-2 py-1 rounded <?php echo $stock_class; ?>">
+                                                <?php echo $product['stock']; ?> left
+                                            </span>
+                                        <?php else: ?>
                                             <span class="text-[10px] font-bold text-red-600 bg-red-100 px-2 py-1 rounded">Out of Stock</span>
                                         <?php endif; ?>
                                     </div>
@@ -174,7 +190,7 @@ require_once '../../includes/customer_header.php';
                                         <div class="flex items-center gap-2">
                                             <div class="flex items-center border border-gray-300 rounded-lg bg-white">
                                                 <button onclick="adjustLocalQty(<?php echo $product['product_id']; ?>, -1)" class="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded-l-lg font-bold">-</button>
-                                                <input type="number" id="input-qty-<?php echo $product['product_id']; ?>" value="<?php echo $cart_qty; ?>" class="w-12 text-center text-sm font-semibold text-gray-800 focus:outline-none appearance-none" min="0">
+                                                <input type="number" id="input-qty-<?php echo $product['product_id']; ?>" value="<?php echo $cart_qty; ?>" class="qty-input w-12 text-center text-sm font-semibold text-gray-800 focus:outline-none appearance-none" min="0" max="<?php echo (int)$product['stock']; ?>" oninput="enforceQtyLimit(<?php echo $product['product_id']; ?>)">
                                                 <button onclick="adjustLocalQty(<?php echo $product['product_id']; ?>, 1)" class="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded-r-lg font-bold">+</button>
                                             </div>
                                             <button id="btn-add-<?php echo $product['product_id']; ?>" onclick="submitCart(<?php echo $product['product_id']; ?>)" class="flex-1 <?php echo $btn_bg; ?> text-white py-1.5 px-3 rounded-lg transition text-sm font-semibold flex items-center justify-center gap-1 shadow-sm">
@@ -250,9 +266,24 @@ function showToast(message, type = 'success') {
 
 function adjustLocalQty(productId, delta) {
     const input = document.getElementById('input-qty-' + productId);
-    let newQty = (parseInt(input.value) || 0) + delta;
+    const maxQty = parseInt(input.max, 10);
+    let newQty = (parseInt(input.value, 10) || 0) + delta;
     if (newQty < 0) newQty = 0;
+    if (!Number.isNaN(maxQty) && maxQty >= 0 && newQty > maxQty) newQty = maxQty;
     input.value = newQty;
+}
+
+function enforceQtyLimit(productId) {
+    const input = document.getElementById('input-qty-' + productId);
+    if (!input) return;
+
+    const maxQty = parseInt(input.max, 10);
+    let qty = parseInt(input.value, 10);
+
+    if (Number.isNaN(qty) || qty < 0) qty = 0;
+    if (!Number.isNaN(maxQty) && maxQty >= 0 && qty > maxQty) qty = maxQty;
+
+    input.value = qty;
 }
 
 function updateFabBadge(count) {
@@ -270,7 +301,11 @@ function updateFabBadge(count) {
 
 function submitCart(productId) {
     const input = document.getElementById('input-qty-' + productId);
-    const quantity = parseInt(input.value) || 0;
+    const maxQty = parseInt(input.max, 10);
+    let quantity = parseInt(input.value, 10);
+    if (Number.isNaN(quantity) || quantity < 0) quantity = 0;
+    if (!Number.isNaN(maxQty) && maxQty >= 0 && quantity > maxQty) quantity = maxQty;
+    input.value = quantity;
     fetch('../../core/customer/add_to_cart.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
