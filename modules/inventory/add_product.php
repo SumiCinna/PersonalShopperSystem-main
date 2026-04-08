@@ -34,6 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($sku) || empty($name) || empty($category)) {
         $error = "SKU, Product Name, and Category are required.";
+    } elseif ($cost_price >= $price) {
+        $error = "Cost price must be lower than the regular selling price.";
     } else {
         $check_stmt = $conn->prepare("SELECT product_id FROM products WHERE sku = ?");
         $check_stmt->bind_param("s", $sku);
@@ -176,7 +178,7 @@ require_once '../../includes/inventory_header.php';
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Supplier Cost Price (₱) *</label>
-                            <input type="text" inputmode="decimal" name="cost_price" required placeholder="0.00" pattern="^\d{1,5}(\.\d{1,2})?$"
+                            <input type="text" inputmode="decimal" name="cost_price" id="cost_price" required placeholder="0.00" pattern="^\d{1,5}(\.\d{1,2})?$"
                                 oninput="
                                     var v = this.value;
                                     if (/^\d{0,5}(\.\d{0,2})?$/.test(v)) {
@@ -189,7 +191,7 @@ require_once '../../includes/inventory_header.php';
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-gray-700 mb-1">Regular Selling Price (₱)</label>
-                            <input type="text" inputmode="decimal" name="price" required placeholder="0.00" pattern="^\d{1,5}(\.\d{1,2})?$"
+                            <input type="text" inputmode="decimal" name="price" id="price" required placeholder="0.00" pattern="^\d{1,5}(\.\d{1,2})?$"
                                 oninput="
                                     var v = this.value;
                                     if (/^\d{0,5}(\.\d{0,2})?$/.test(v)) {
@@ -199,6 +201,9 @@ require_once '../../includes/inventory_header.php';
                                     }
                                 "
                                 class="w-full bg-white border border-gray-300 rounded p-3">
+                        </div>
+                        <div class="col-span-2">
+                            <p id="price_validation_feedback" class="text-xs text-gray-500 min-h-[1rem]"></p>
                         </div>
                         <div class="col-span-2">
                             <label class="block text-sm font-bold text-red-600 mb-1">Promo/Discount Price (₱) - Optional</label>
@@ -261,5 +266,61 @@ require_once '../../includes/inventory_header.php';
     </div>
 
 </main>
+
+<script>
+(function () {
+    const costInput = document.getElementById('cost_price');
+    const sellInput = document.getElementById('price');
+    const feedback = document.getElementById('price_validation_feedback');
+    const form = document.querySelector('form[action="add_product.php"]');
+
+    if (!costInput || !sellInput || !feedback || !form) return;
+
+    function parsePrice(value) {
+        if (!value || value.trim() === '') return null;
+        const n = Number.parseFloat(value);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    function validatePrices() {
+        const cost = parsePrice(costInput.value);
+        const sell = parsePrice(sellInput.value);
+
+        costInput.setCustomValidity('');
+        sellInput.setCustomValidity('');
+
+        if (cost === null || sell === null) {
+            feedback.textContent = 'Cost price must be lower than regular selling price.';
+            feedback.className = 'text-xs text-gray-500 min-h-[1rem]';
+            return true;
+        }
+
+        if (cost >= sell) {
+            const message = 'Cost price must be lower than regular selling price.';
+            costInput.setCustomValidity(message);
+            sellInput.setCustomValidity(message);
+            feedback.textContent = message;
+            feedback.className = 'text-xs text-red-600 min-h-[1rem]';
+            return false;
+        }
+
+        feedback.textContent = 'Looks good: selling price is higher than cost price.';
+        feedback.className = 'text-xs text-green-600 min-h-[1rem]';
+        return true;
+    }
+
+    costInput.addEventListener('input', validatePrices);
+    sellInput.addEventListener('input', validatePrices);
+
+    form.addEventListener('submit', function (event) {
+        if (!validatePrices()) {
+            event.preventDefault();
+            sellInput.reportValidity();
+        }
+    });
+
+    validatePrices();
+})();
+</script>
 
 <?php require_once '../../includes/inventory_footer.php'; ?>

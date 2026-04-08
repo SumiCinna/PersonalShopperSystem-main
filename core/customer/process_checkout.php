@@ -72,11 +72,21 @@ if (empty($cart_items)) {
 // ─── ALWAYS recalculate total server-side from actual DB items ─────────────────
 // Never trust $_POST['total_amount'] — recalculate from what was actually fetched
 // so that order total always matches the items inserted into order_items.
-$total_amount = 0;
+$subtotal_amount = 0;
 foreach ($cart_items as $item) {
-    $total_amount += $item['final_price'] * $item['quantity'];
+    $subtotal_amount += $item['final_price'] * $item['quantity'];
 }
-$total_amount = round($total_amount, 2);
+$subtotal_amount = round($subtotal_amount, 2);
+
+if ($subtotal_amount < 300) {
+    $_SESSION['error'] = 'Minimum subtotal of ₱300.00 is required before checkout.';
+    header("Location: ../../modules/customer/cart.php");
+    exit();
+}
+
+$vat_amount = round($subtotal_amount * 0.12, 2);
+$service_fee_amount = round($subtotal_amount * 0.10, 2);
+$total_amount = round($subtotal_amount + $vat_amount + $service_fee_amount, 2);
 
 // ─── Payment split ─────────────────────────────────────────────────────────────
 $amount_to_pay = match($payment_type) {

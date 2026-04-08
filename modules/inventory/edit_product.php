@@ -24,6 +24,40 @@ function log_activity($conn, $user_id, $action, $product_id, $product_name, $fie
     $stmt->close();
 }
 
+function normalize_compare_value(string $field_key, $value): string {
+    if ($value === null) {
+        return '';
+    }
+
+    if (in_array($field_key, ['cost_price', 'price', 'discount_price', 'unit_value'], true)) {
+        if ($value === '' || $value === false) {
+            return '';
+        }
+        return number_format((float) $value, 2, '.', '');
+    }
+
+    if (in_array($field_key, ['stock', 'low_stock_threshold'], true)) {
+        if ($value === '' || $value === false) {
+            return '';
+        }
+        return (string) ((int) $value);
+    }
+
+    return trim((string) $value);
+}
+
+function format_audit_value(string $field_key, $value): string {
+    if ($value === null || $value === '') {
+        return '—';
+    }
+
+    if (in_array($field_key, ['cost_price', 'price', 'discount_price', 'unit_value'], true)) {
+        return number_format((float) $value, 2, '.', '');
+    }
+
+    return (string) $value;
+}
+
 $fetch_stmt = $conn->prepare("SELECT * FROM products WHERE product_id = ?");
 $fetch_stmt->bind_param("i", $product_id);
 $fetch_stmt->execute();
@@ -55,6 +89,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($sku) || empty($name) || empty($category)) {
         $error = "SKU, Product Name, and Category are required.";
+    } elseif ($cost_price >= $price) {
+        $error = "Cost price must be lower than the regular selling price.";
     } else {
         $check_stmt = $conn->prepare("SELECT product_id FROM products WHERE sku = ? AND product_id != ?");
         $check_stmt->bind_param("si", $sku, $product_id);
@@ -63,6 +99,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($check_stmt->get_result()->num_rows > 0) {
             $error = "Another product is already using this SKU! Please use a unique SKU.";
         } else {
+            $watched_fields = [
+                'name'                => ['label' => 'Product Name',  'old' => $product['name'],                'new' => $name],
+                'sku'                 => ['label' => 'SKU',            'old' => $product['sku'],                 'new' => $sku],
+                'brand'               => ['label' => 'Brand',          'old' => $product['brand'],               'new' => $brand],
+                'category'            => ['label' => 'Category',       'old' => $product['category'],            'new' => $category],
+                'cost_price'          => ['label' => 'Cost Price',     'old' => $product['cost_price'],          'new' => $cost_price],
+                'price'               => ['label' => 'Selling Price',  'old' => $product['price'],               'new' => $price],
+                'discount_price'      => ['label' => 'Discount Price', 'old' => $product['discount_price'],      'new' => $discount_price],
+                'stock'               => ['label' => 'Stock',          'old' => $product['stock'],               'new' => $stock],
+                'low_stock_threshold' => ['label' => 'Low Stock At',   'old' => $product['low_stock_threshold'], 'new' => $low_stock_threshold],
+                'status'              => ['label' => 'Status',         'old' => $product['status'],              'new' => $status],
+                'unit_value'          => ['label' => 'Unit Value',     'old' => $product['unit_value'],          'new' => $unit_value],
+                'unit_measure'        => ['label' => 'Unit Measure',   'old' => $product['unit_measure'],        'new' => $unit_measure],
+                'description'         => ['label' => 'Description',    'old' => $product['description'],         'new' => $description],
+                'image_url'           => ['label' => 'Image URL',      'old' => $product['image_url'],           'new' => $image_url],
+            ];
+
+            $changed_fields = [];
+            foreach ($watched_fields as $field_key => $field_data) {
+                $old_normalized = normalize_compare_value($field_key, $field_data['old']);
+                $new_normalized = normalize_compare_value($field_key, $field_data['new']);
+                if ($old_normalized !== $new_normalized) {
+                    $changed_fields[$field_key] = $field_data;
+                }
+            }
+
+            if (empty($changed_fields)) {
+                $success = "No changes detected. Nothing was updated.";
+                $check_stmt->close();
+                goto end_post;
+            }
+
             $update_query = "UPDATE products SET 
                 sku = ?, name = ?, brand = ?, category = ?, cost_price = ?, price = ?, discount_price = ?,
                 unit_value = ?, unit_measure = ?, stock = ?, low_stock_threshold = ?, 
@@ -79,36 +147,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stmt->execute()) {
                 $success = "Product updated successfully!";
 
-                $watched_fields = [
-                    'name'                => ['label' => 'Product Name',     'old' => $product['name'],                'new' => $name],
-                    'sku'                 => ['label' => 'SKU',               'old' => $product['sku'],                 'new' => $sku],
-                    'brand'               => ['label' => 'Brand',             'old' => $product['brand'],               'new' => $brand],
-                    'category'            => ['label' => 'Category',          'old' => $product['category'],            'new' => $category],
-                    'cost_price'          => ['label' => 'Cost Price',        'old' => $product['cost_price'],          'new' => $cost_price],
-                    'price'               => ['label' => 'Selling Price',     'old' => $product['price'],               'new' => $price],
-                    'discount_price'      => ['label' => 'Discount Price',    'old' => $product['discount_price'],      'new' => $discount_price],
-                    'stock'               => ['label' => 'Stock',             'old' => $product['stock'],               'new' => $stock],
-                    'low_stock_threshold' => ['label' => 'Low Stock At',      'old' => $product['low_stock_threshold'], 'new' => $low_stock_threshold],
-                    'status'              => ['label' => 'Status',            'old' => $product['status'],              'new' => $status],
-                    'unit_value'          => ['label' => 'Unit Value',        'old' => $product['unit_value'],          'new' => $unit_value],
-                    'unit_measure'        => ['label' => 'Unit Measure',      'old' => $product['unit_measure'],        'new' => $unit_measure],
-                    'description'         => ['label' => 'Description',       'old' => $product['description'],         'new' => $description],
-                    'image_url'           => ['label' => 'Image URL',         'old' => $product['image_url'],           'new' => $image_url],
-                ];
-
-                foreach ($watched_fields as $field_key => $field_data) {
-                    if ((string)$field_data['old'] !== (string)$field_data['new']) {
-                        log_activity(
-                            $conn,
-                            $_SESSION['user_id'],
-                            'update',
-                            $product_id,
-                            $name,
-                            $field_data['label'],
-                            $field_data['old'] ?? '—',
-                            $field_data['new'] ?? '—'
-                        );
-                    }
+                foreach ($changed_fields as $field_key => $field_data) {
+                    log_activity(
+                        $conn,
+                        $_SESSION['user_id'],
+                        'update',
+                        $product_id,
+                        $name,
+                        $field_data['label'],
+                        format_audit_value($field_key, $field_data['old']),
+                        format_audit_value($field_key, $field_data['new'])
+                    );
                 }
 
                 $fetch_stmt2 = $conn->prepare("SELECT * FROM products WHERE product_id = ?");
@@ -125,6 +174,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $check_stmt->close();
     }
 }
+
+end_post:
 
 $page_title = 'Edit Product: ' . htmlspecialchars($product['name']);
 require_once '../../includes/inventory_header.php';
@@ -228,7 +279,7 @@ require_once '../../includes/inventory_header.php';
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-1">Cost Price (₱) *</label>
-                            <input type="text" inputmode="decimal" name="cost_price" value="<?php echo htmlspecialchars($product['cost_price']); ?>" required pattern="^\d{1,5}(\.\d{1,2})?$"
+                            <input type="text" inputmode="decimal" name="cost_price" id="cost_price" value="<?php echo htmlspecialchars($product['cost_price']); ?>" required pattern="^\d{1,5}(\.\d{1,2})?$"
                                 oninput="
                                     var v = this.value;
                                     if (/^\d{0,5}(\.\d{0,2})?$/.test(v)) {
@@ -241,7 +292,7 @@ require_once '../../includes/inventory_header.php';
                         </div>
                         <div>
                             <label class="block text-sm font-bold text-gray-700 mb-1">Regular Selling Price (₱)</label>
-                            <input type="text" inputmode="decimal" name="price" value="<?php echo htmlspecialchars($product['price']); ?>" required pattern="^\d{1,5}(\.\d{1,2})?$"
+                            <input type="text" inputmode="decimal" name="price" id="price" value="<?php echo htmlspecialchars($product['price']); ?>" required pattern="^\d{1,5}(\.\d{1,2})?$"
                                 oninput="
                                     var v = this.value;
                                     if (/^\d{0,5}(\.\d{0,2})?$/.test(v)) {
@@ -251,6 +302,9 @@ require_once '../../includes/inventory_header.php';
                                     }
                                 "
                                 class="w-full bg-white border border-gray-300 rounded p-3">
+                        </div>
+                        <div class="col-span-2">
+                            <p id="price_validation_feedback" class="text-xs text-gray-500 min-h-[1rem]"></p>
                         </div>
                         <div class="col-span-2">
                             <label class="block text-sm font-bold text-red-600 mb-1">Promo/Discount Price (₱) - Optional</label>
@@ -313,5 +367,61 @@ require_once '../../includes/inventory_header.php';
     </div>
 
 </main>
+
+<script>
+(function () {
+    const costInput = document.getElementById('cost_price');
+    const sellInput = document.getElementById('price');
+    const feedback = document.getElementById('price_validation_feedback');
+    const form = document.querySelector('form[action^="edit_product.php"]');
+
+    if (!costInput || !sellInput || !feedback || !form) return;
+
+    function parsePrice(value) {
+        if (!value || value.trim() === '') return null;
+        const n = Number.parseFloat(value);
+        return Number.isFinite(n) ? n : null;
+    }
+
+    function validatePrices() {
+        const cost = parsePrice(costInput.value);
+        const sell = parsePrice(sellInput.value);
+
+        costInput.setCustomValidity('');
+        sellInput.setCustomValidity('');
+
+        if (cost === null || sell === null) {
+            feedback.textContent = 'Cost price must be lower than regular selling price.';
+            feedback.className = 'text-xs text-gray-500 min-h-[1rem]';
+            return true;
+        }
+
+        if (cost >= sell) {
+            const message = 'Cost price must be lower than regular selling price.';
+            costInput.setCustomValidity(message);
+            sellInput.setCustomValidity(message);
+            feedback.textContent = message;
+            feedback.className = 'text-xs text-red-600 min-h-[1rem]';
+            return false;
+        }
+
+        feedback.textContent = 'Looks good: selling price is higher than cost price.';
+        feedback.className = 'text-xs text-green-600 min-h-[1rem]';
+        return true;
+    }
+
+    costInput.addEventListener('input', validatePrices);
+    sellInput.addEventListener('input', validatePrices);
+
+    form.addEventListener('submit', function (event) {
+        if (!validatePrices()) {
+            event.preventDefault();
+            sellInput.reportValidity();
+        }
+    });
+
+    validatePrices();
+})();
+</script>
 
 <?php require_once '../../includes/inventory_footer.php'; ?>

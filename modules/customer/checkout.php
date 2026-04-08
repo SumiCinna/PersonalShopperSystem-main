@@ -33,7 +33,9 @@ $stmt->execute();
 $result = $stmt->get_result();
 
 $cart_items   = [];
-$total_amount = 0;
+$subtotal_amount = 0;
+$vat_rate = 0.12;
+$service_fee_rate = 0.10;
 $has_meat     = false;
 $has_fresh    = false;
 
@@ -42,7 +44,7 @@ while ($row = $result->fetch_assoc()) {
         ? $row['discount_price'] : $row['price'];
     $row['final_price'] = $final_price;
     $cart_items[]  = $row;
-    $total_amount += ($final_price * $row['quantity']);
+    $subtotal_amount += ($final_price * $row['quantity']);
 
     if ($row['category'] === 'Meat & Poultry') $has_meat  = true;
     if ($row['category'] === 'Fresh Produce')  $has_fresh = true;
@@ -53,6 +55,17 @@ if (empty($cart_items)) {
     header("Location: cart.php");
     exit();
 }
+
+$subtotal_amount = round($subtotal_amount, 2);
+if ($subtotal_amount < 300) {
+    $_SESSION['error'] = 'Minimum subtotal of ₱300.00 is required before checkout.';
+    header("Location: cart.php");
+    exit();
+}
+
+$vat_amount = round($subtotal_amount * $vat_rate, 2);
+$service_fee_amount = round($subtotal_amount * $service_fee_rate, 2);
+$total_amount = round($subtotal_amount + $vat_amount + $service_fee_amount, 2);
 
 // --- MEAT & POULTRY: check if 1-2 hr window falls within store hours (10:00-19:00) ---
 $meat_blocked = false;
@@ -259,6 +272,18 @@ require_once '../../includes/customer_header.php';
                     </div>
 
                     <div class="border-t pt-4 mb-6">
+                        <div class="flex justify-between text-sm text-gray-600 mb-2">
+                            <span>Subtotal</span>
+                            <span class="font-semibold" id="subtotalDisplay">₱<?php echo number_format($subtotal_amount, 2); ?></span>
+                        </div>
+                        <div class="flex justify-between text-sm text-gray-600 mb-3 pb-3 border-b border-dashed border-gray-300">
+                            <span>VAT (12%)</span>
+                            <span class="font-semibold" id="vatDisplay">₱<?php echo number_format($vat_amount, 2); ?></span>
+                        </div>
+                        <div class="flex justify-between text-sm text-gray-600 mb-3 pb-3 border-b border-dashed border-gray-300">
+                            <span>Service Fee (10%)</span>
+                            <span class="font-semibold" id="serviceFeeDisplay">₱<?php echo number_format($service_fee_amount, 2); ?></span>
+                        </div>
                         <div class="flex justify-between text-2xl font-black text-gray-900">
                             <span>Total</span>
                             <span class="text-blue-700" id="grandTotalDisplay">₱<?php echo number_format($total_amount, 2); ?></span>
@@ -352,6 +377,18 @@ require_once '../../includes/customer_header.php';
                         <span>Payment Type</span>
                         <span class="font-bold text-gray-900" id="modal_payment_type">—</span>
                     </div>
+                    <div class="flex justify-between text-sm text-gray-700">
+                        <span>Subtotal</span>
+                        <span class="font-bold text-gray-900" id="modal_subtotal">—</span>
+                    </div>
+                    <div class="flex justify-between text-sm text-gray-700">
+                        <span>VAT (12%)</span>
+                        <span class="font-bold text-gray-900" id="modal_vat">—</span>
+                    </div>
+                    <div class="flex justify-between text-sm text-gray-700">
+                        <span>Service Fee (10%)</span>
+                        <span class="font-bold text-gray-900" id="modal_service_fee">—</span>
+                    </div>
                     <div class="border-t border-green-200 pt-2 flex justify-between text-sm">
                         <span class="font-bold text-green-700">Pay Now (via PayMongo)</span>
                         <span class="font-black text-green-700" id="modal_pay_now">—</span>
@@ -395,6 +432,9 @@ require_once '../../includes/customer_header.php';
 <script>
     const hasMeat  = <?php echo $has_meat  ? 'true' : 'false'; ?>;
     const hasFresh = <?php echo $has_fresh ? 'true' : 'false'; ?>;
+    const subtotalAmount = <?php echo json_encode($subtotal_amount); ?>;
+    const vatAmount = <?php echo json_encode($vat_amount); ?>;
+    const serviceFeeAmount = <?php echo json_encode($service_fee_amount); ?>;
 
     function updatePaymentBreakdown() {
         const total = parseFloat(document.querySelector('input[name="total_amount"]').value);
@@ -408,6 +448,12 @@ require_once '../../includes/customer_header.php';
         const fmt = v => '₱' + v.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         document.getElementById('payNowDisplay').innerText    = fmt(upfront);
         document.getElementById('balanceDueDisplay').innerText = fmt(balance);
+        const subtotalEl = document.getElementById('subtotalDisplay');
+        const vatEl = document.getElementById('vatDisplay');
+        const serviceFeeEl = document.getElementById('serviceFeeDisplay');
+        if (subtotalEl) subtotalEl.innerText = fmt(subtotalAmount);
+        if (vatEl) vatEl.innerText = fmt(vatAmount);
+        if (serviceFeeEl) serviceFeeEl.innerText = fmt(serviceFeeAmount);
     }
 
     function filterTimeSlots() {
@@ -491,6 +537,9 @@ require_once '../../includes/customer_header.php';
         document.getElementById('modal_pickup_date').textContent  = dateFormatted;
         document.getElementById('modal_pickup_time').textContent  = timeFormatted;
         document.getElementById('modal_payment_type').textContent = payLabels[payType];
+        document.getElementById('modal_subtotal').textContent     = fmt(subtotalAmount);
+        document.getElementById('modal_vat').textContent          = fmt(vatAmount);
+        document.getElementById('modal_service_fee').textContent  = fmt(serviceFeeAmount);
         document.getElementById('modal_pay_now').textContent      = fmt(upfront);
         document.getElementById('modal_balance').textContent      = fmt(balance);
 

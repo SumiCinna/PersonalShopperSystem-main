@@ -25,6 +25,8 @@ $result = $stmt->get_result();
 
 $cart_items = [];
 $subtotal = 0;
+$vat_rate = 0.12;
+$service_fee_rate = 0.10;
 
 while ($row = $result->fetch_assoc()) {
     // Use discount price if available
@@ -34,6 +36,10 @@ while ($row = $result->fetch_assoc()) {
     $subtotal += ($final_price * $row['quantity']);
 }
 $stmt->close();
+
+$vat_amount = round($subtotal * $vat_rate, 2);
+$service_fee_amount = round($subtotal * $service_fee_rate, 2);
+$grand_total = round($subtotal + $vat_amount + $service_fee_amount, 2);
 
 // Include the Customer Header
 $page_title = 'My Shopping Cart';
@@ -99,16 +105,16 @@ require_once '../../includes/customer_header.php';
                                 <div class="mt-4 sm:mt-0 sm:ml-6 flex flex-col items-center sm:items-end space-y-3">
                                     
                                     <div class="flex items-center border border-gray-300 rounded-lg">
-                                        <button onclick="updateCart(<?php echo $item['cart_id']; ?>, 'decrease')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-l-lg transition" <?php echo $item['quantity'] <= 1 ? 'disabled' : ''; ?>>-</button>
+                                        <button type="button" onclick="updateCart(<?php echo $item['cart_id']; ?>, 'decrease')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-l-lg transition" <?php echo $item['quantity'] <= 1 ? 'disabled' : ''; ?>>-</button>
                                         
                                         <input type="text" readonly value="<?php echo $item['quantity']; ?>" class="w-12 text-center text-sm font-semibold border-x border-gray-300 py-1 bg-white">
                                         
-                                        <button onclick="updateCart(<?php echo $item['cart_id']; ?>, 'increase')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-r-lg transition" <?php echo $item['quantity'] >= $item['stock'] ? 'disabled' : ''; ?>>+</button>
+                                        <button type="button" onclick="updateCart(<?php echo $item['cart_id']; ?>, 'increase')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-r-lg transition" <?php echo $item['quantity'] >= $item['stock'] ? 'disabled' : ''; ?>>+</button>
                                     </div>
                                     
                                     <p class="text-sm font-bold text-gray-900">Total: ₱<?php echo number_format($item['final_price'] * $item['quantity'], 2); ?></p>
 
-                                    <button onclick="removeItem(<?php echo $item['cart_id']; ?>)" class="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center transition">
+                                    <button type="button" onclick="removeItem(<?php echo $item['cart_id']; ?>)" class="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center transition">
                                         <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                         Remove
                                     </button>
@@ -129,14 +135,23 @@ require_once '../../includes/customer_header.php';
                     </div>
                     
                     <div class="flex justify-between text-gray-600 mb-4 border-b pb-4">
-                        <span>Convenience Fee</span>
-                        <span class="font-semibold">₱0.00</span>
+                        <span>VAT (12%)</span>
+                        <span class="font-semibold" id="vatDisplay">₱<?php echo number_format($vat_amount, 2); ?></span>
+                    </div>
+
+                    <div class="flex justify-between text-gray-600 mb-4 border-b pb-4">
+                        <span>Service Fee (10%)</span>
+                        <span class="font-semibold" id="serviceFeeDisplay">₱<?php echo number_format($service_fee_amount, 2); ?></span>
                     </div>
                     
                     <div class="flex justify-between text-xl font-bold text-gray-900 mb-8">
                         <span>Grand Total</span>
-                        <span class="text-blue-700" id="grandTotalDisplay">₱<?php echo number_format($subtotal, 2); ?></span>
+                        <span class="text-blue-700" id="grandTotalDisplay">₱<?php echo number_format($grand_total, 2); ?></span>
                     </div>
+
+                    <p id="minimumNotice" class="text-sm text-red-600 font-semibold mb-4 hidden">
+                        Minimum subtotal of ₱300.00 is required before checkout.
+                    </p>
                     
                     <button type="submit" id="checkoutBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg flex justify-center items-center transition shadow-md">
                         Proceed to Checkout
@@ -155,6 +170,10 @@ require_once '../../includes/customer_header.php';
 </main>
 
 <script>
+    const VAT_RATE = 0.12;
+    const SERVICE_FEE_RATE = 0.10;
+    const MINIMUM_SUBTOTAL = 300;
+
     function toggleAll(source) {
         const checkboxes = document.querySelectorAll('.item-checkbox');
         checkboxes.forEach(cb => cb.checked = source.checked);
@@ -162,31 +181,72 @@ require_once '../../includes/customer_header.php';
     }
 
     function updateTotal() {
-        let total = 0;
+        let subtotal = 0;
         let count = 0;
         const checkboxes = document.querySelectorAll('.item-checkbox:checked');
         
         checkboxes.forEach(cb => {
-            total += parseFloat(cb.dataset.price) * parseInt(cb.dataset.qty);
+            subtotal += parseFloat(cb.dataset.price) * parseInt(cb.dataset.qty);
             count++;
         });
 
-        const formattedTotal = '₱' + total.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const vat = subtotal * VAT_RATE;
+    const serviceFee = subtotal * SERVICE_FEE_RATE;
+    const grandTotal = subtotal + vat + serviceFee;
+
+        const formattedSubtotal = '₱' + subtotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const formattedVat = '₱' + vat.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const formattedServiceFee = '₱' + serviceFee.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const formattedGrandTotal = '₱' + grandTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         
-        document.getElementById('subtotalDisplay').innerText = formattedTotal;
-        document.getElementById('grandTotalDisplay').innerText = formattedTotal;
+        document.getElementById('subtotalDisplay').innerText = formattedSubtotal;
+        document.getElementById('vatDisplay').innerText = formattedVat;
+    document.getElementById('serviceFeeDisplay').innerText = formattedServiceFee;
+        document.getElementById('grandTotalDisplay').innerText = formattedGrandTotal;
         document.getElementById('itemCountDisplay').innerText = `Subtotal (${count} items)`;
+
+        const selectAllCheckbox = document.getElementById('selectAll');
+        const allCheckboxes = document.querySelectorAll('.item-checkbox');
+        if (allCheckboxes.length > 0) {
+            selectAllCheckbox.checked = count === allCheckboxes.length;
+        }
         
-        // Disable checkout button if nothing selected
+        // Disable checkout button if nothing selected or minimum subtotal not met
         const btn = document.getElementById('checkoutBtn');
-        if(count === 0) {
+        const minimumNotice = document.getElementById('minimumNotice');
+        if(count === 0 || subtotal < MINIMUM_SUBTOTAL) {
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
+            if (count > 0 && subtotal < MINIMUM_SUBTOTAL) {
+                minimumNotice.classList.remove('hidden');
+            } else {
+                minimumNotice.classList.add('hidden');
+            }
         } else {
             btn.disabled = false;
             btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            minimumNotice.classList.add('hidden');
         }
     }
+
+    document.getElementById('cartForm')?.addEventListener('submit', function (event) {
+        const checked = document.querySelectorAll('.item-checkbox:checked');
+        let subtotal = 0;
+        checked.forEach(cb => {
+            subtotal += parseFloat(cb.dataset.price) * parseInt(cb.dataset.qty);
+        });
+
+        if (checked.length === 0) {
+            event.preventDefault();
+            alert('Please select at least one item to proceed to checkout.');
+            return;
+        }
+
+        if (subtotal < MINIMUM_SUBTOTAL) {
+            event.preventDefault();
+            alert('Minimum subtotal of ₱300.00 is required before checkout.');
+        }
+    });
 
     // AJAX function to handle + and - quantity buttons
     function updateCart(cartId, action) {
@@ -225,6 +285,8 @@ require_once '../../includes/customer_header.php';
             .catch(error => console.error('Error:', error));
         }
     }
+
+    updateTotal();
 </script>
 
 <?php 
