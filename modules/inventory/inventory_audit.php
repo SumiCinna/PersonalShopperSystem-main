@@ -15,7 +15,7 @@ $current_page = isset($_GET['page']) && is_numeric($_GET['page']) ? max(1, intva
 $offset       = ($current_page - 1) * $per_page;
 
 // --- FILTERS ---
-$filter_action    = isset($_GET['action'])    && in_array($_GET['action'], ['add','update','delete']) ? $_GET['action'] : '';
+$filter_action    = isset($_GET['action'])    && in_array($_GET['action'], ['add','update','inactive']) ? $_GET['action'] : '';
 $filter_search    = isset($_GET['search'])    ? trim($_GET['search'])    : '';
 $filter_date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
 $filter_date_to   = isset($_GET['date_to'])   ? trim($_GET['date_to'])   : '';
@@ -26,9 +26,13 @@ $bind_types  = '';
 $bind_values = [];
 
 if ($filter_action !== '') {
-    $where_parts[] = "al.action = ?";
-    $bind_types   .= 's';
-    $bind_values[] = $filter_action;
+    if ($filter_action === 'inactive') {
+        $where_parts[] = "al.action = 'update' AND LOWER(COALESCE(al.field_changed, '')) = 'status' AND LOWER(COALESCE(al.new_value, '')) LIKE '%inactive%'";
+    } else {
+        $where_parts[] = "al.action = ?";
+        $bind_types   .= 's';
+        $bind_values[] = $filter_action;
+    }
 }
 if ($filter_search !== '') {
     // Search against live product name from JOIN, username, and field_changed
@@ -109,6 +113,12 @@ $summary_map = ['add' => 0, 'update' => 0, 'delete' => 0];
 foreach ($summary as $s) $summary_map[$s['action']] = $s['cnt'];
 $total_all = array_sum($summary_map);
 
+$inactive_products_count = 0;
+$inactive_result = $conn->query("SELECT COUNT(*) AS cnt FROM products WHERE status = 'inactive'");
+if ($inactive_result) {
+    $inactive_products_count = (int) ($inactive_result->fetch_assoc()['cnt'] ?? 0);
+}
+
 // --- BUILD QUERY STRING HELPER ---
 function build_query(array $overrides = []): string {
     $base = array_filter([
@@ -176,15 +186,15 @@ require_once '../../includes/inventory_header.php';
                 <p class="text-2xl font-bold text-yellow-700"><?php echo number_format($summary_map['update']); ?></p>
             </div>
         </div>
-        <div class="bg-white rounded-xl border border-red-200 shadow-sm p-5 flex items-center gap-4">
-            <div class="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
-                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center gap-4">
+            <div class="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h11M9 21V3m12 9a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
             </div>
             <div>
-                <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Products Deleted</p>
-                <p class="text-2xl font-bold text-red-700"><?php echo number_format($summary_map['delete']); ?></p>
+                <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Products Inactive</p>
+                <p class="text-2xl font-bold text-gray-700"><?php echo number_format($inactive_products_count); ?></p>
             </div>
         </div>
     </div>
@@ -207,9 +217,9 @@ require_once '../../includes/inventory_header.php';
                 <label class="block text-xs font-semibold text-gray-600 mb-1 uppercase tracking-wide">Action</label>
                 <select name="action" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none bg-white">
                     <option value="">All Actions</option>
-                    <option value="add"    <?php echo $filter_action === 'add'    ? 'selected' : ''; ?>>Added</option>
-                    <option value="update" <?php echo $filter_action === 'update' ? 'selected' : ''; ?>>Updated</option>
-                    <option value="delete" <?php echo $filter_action === 'delete' ? 'selected' : ''; ?>>Deleted</option>
+                    <option value="add"      <?php echo $filter_action === 'add'      ? 'selected' : ''; ?>>Added</option>
+                    <option value="update"   <?php echo $filter_action === 'update'   ? 'selected' : ''; ?>>Updated</option>
+                    <option value="inactive" <?php echo $filter_action === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
                 </select>
             </div>
             <div>

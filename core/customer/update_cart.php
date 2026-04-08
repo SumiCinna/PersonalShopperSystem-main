@@ -6,9 +6,14 @@ header('Content-Type: application/json');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id'])) {
     $data = json_decode(file_get_contents('php://input'), true);
-    $cart_id = intval($data['cart_id']);
-    $action = $data['action']; // 'increase' or 'decrease'
+    $cart_id = intval($data['cart_id'] ?? 0);
+    $action = $data['action'] ?? ''; // 'increase' or 'decrease'
     $user_id = $_SESSION['user_id'];
+
+    if ($cart_id <= 0 || !in_array($action, ['increase', 'decrease'], true)) {
+        echo json_encode(['success' => false, 'message' => 'Invalid cart update request.']);
+        exit();
+    }
 
     // Get current cart info and product stock
     $stmt = $conn->prepare("SELECT c.quantity, p.stock FROM cart c JOIN products p ON c.product_id = p.product_id WHERE c.cart_id = ? AND c.user_id = ?");
@@ -17,14 +22,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id'])) {
     $result = $stmt->get_result();
 
     if ($row = $result->fetch_assoc()) {
-        $new_qty = $row['quantity'];
+        $new_qty = (int) $row['quantity'];
+        $stock = (int) $row['stock'];
         
-        if ($action === 'increase' && $new_qty < $row['stock']) {
+        if ($action === 'increase' && $new_qty < $stock) {
             $new_qty++;
         } elseif ($action === 'decrease' && $new_qty > 1) {
             $new_qty--;
         } else {
-            echo json_encode(['success' => false, 'message' => 'Cannot update quantity. Check stock limits.']);
+            if ($action === 'increase') {
+                echo json_encode(['success' => false, 'message' => 'Cannot add more of this item. Available stock: ' . $stock . '.']);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Quantity cannot go lower than 1.']);
+            }
             exit();
         }
 
@@ -35,5 +45,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id'])) {
     } else {
         echo json_encode(['success' => false, 'message' => 'Item not found.']);
     }
+} else {
+    echo json_encode(['success' => false, 'message' => 'Invalid request method or unauthorized access.']);
 }
+
+$conn->close();
 ?>

@@ -33,6 +33,21 @@ require_once '../../includes/inventory_header.php';
                 <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
             </div>
 
+            <div>
+                <select id="categoryFilter" onchange="filterTable()" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-sm bg-white">
+                    <option value="">All Categories</option>
+                    <option value="Beverages">Beverages</option>
+                    <option value="Canned Goods">Canned Goods</option>
+                    <option value="Condiments">Condiments</option>
+                    <option value="Dairy">Dairy</option>
+                    <option value="Fresh Produce">Fresh Produce</option>
+                    <option value="Noodles">Noodles</option>
+                    <option value="Snacks">Snacks</option>
+                    <option value="Cooking Essentials">Cooking Essentials</option>
+                    <option value="Meat & Poultry">Meat &amp; Poultry</option>
+                </select>
+            </div>
+
             <a href="add_product.php" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg flex items-center justify-center transition shadow-sm text-sm">
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                 Add Product
@@ -58,7 +73,7 @@ require_once '../../includes/inventory_header.php';
                         <tbody class="divide-y divide-gray-200">
                             <?php if ($result->num_rows > 0): ?>
                                 <?php while ($row = $result->fetch_assoc()): ?>
-                                    <tr class="hover:bg-blue-50 transition border-b border-gray-100 last:border-0">
+                                    <tr class="hover:bg-blue-50 transition border-b border-gray-100 last:border-0" data-category="<?php echo htmlspecialchars($row['category']); ?>">
                                         <td class="p-4 text-sm font-mono text-gray-500"><?php echo htmlspecialchars($row['sku']); ?></td>
                                         <td class="p-4">
                                             <div class="font-bold text-gray-800"><?php echo htmlspecialchars($row['name']); ?></div>
@@ -343,6 +358,7 @@ require_once '../../includes/inventory_header.php';
     function filterTable() {
         const input = document.getElementById("searchInput");
         const filter = input.value.toUpperCase();
+        const categoryFilter = document.getElementById("categoryFilter").value.toUpperCase();
         const table = document.getElementById("productsTable");
         const tr = table.getElementsByTagName("tr");
 
@@ -352,12 +368,16 @@ require_once '../../includes/inventory_header.php';
             // Check Name (col 1) and SKU (col 0)
             const tdSku = tr[i].getElementsByTagName("td")[0];
             const tdName = tr[i].getElementsByTagName("td")[1];
+            const rowCategory = (tr[i].getAttribute('data-category') || '').toUpperCase();
             
             if (tdSku || tdName) {
                 const txtValueSku = tdSku.textContent || tdSku.innerText;
                 const txtValueName = tdName.textContent || tdName.innerText;
-                
-                if (txtValueSku.toUpperCase().indexOf(filter) > -1 || txtValueName.toUpperCase().indexOf(filter) > -1) {
+
+                const textMatch = txtValueSku.toUpperCase().indexOf(filter) > -1 || txtValueName.toUpperCase().indexOf(filter) > -1;
+                const categoryMatch = categoryFilter === '' || rowCategory === categoryFilter;
+
+                if (textMatch && categoryMatch) {
                     match = true;
                 }
             }

@@ -109,7 +109,7 @@ require_once '../../includes/customer_header.php';
                                         
                                         <input type="text" readonly value="<?php echo $item['quantity']; ?>" class="w-12 text-center text-sm font-semibold border-x border-gray-300 py-1 bg-white">
                                         
-                                        <button type="button" onclick="updateCart(<?php echo $item['cart_id']; ?>, 'increase')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-r-lg transition" <?php echo $item['quantity'] >= $item['stock'] ? 'disabled' : ''; ?>>+</button>
+                                        <button type="button" onclick="updateCart(<?php echo $item['cart_id']; ?>, 'increase')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-r-lg transition">+</button>
                                     </div>
                                     
                                     <p class="text-sm font-bold text-gray-900">Total: ₱<?php echo number_format($item['final_price'] * $item['quantity'], 2); ?></p>
