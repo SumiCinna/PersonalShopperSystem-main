@@ -89,6 +89,30 @@
                     <span class="font-medium">Products</span>
                 </a>
 
+                <!-- PO & Receiving -->
+                <a href="purchase_orders.php"
+                   class="flex items-center gap-3 px-4 py-3 rounded-lg transition
+                          <?php echo in_array(basename($_SERVER['PHP_SELF']), ['purchase_orders.php', 'po_receive.php'], true)
+                                     ? 'bg-blue-600 text-white shadow-md'
+                                     : 'text-blue-100 hover:bg-blue-700 hover:text-white'; ?>">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"/>
+                    </svg>
+                    <span class="font-medium">PO & Receiving</span>
+                </a>
+
+                <!-- Supplier Returns -->
+                <a href="supplier_returns.php"
+                   class="flex items-center gap-3 px-4 py-3 rounded-lg transition
+                          <?php echo (basename($_SERVER['PHP_SELF']) === 'supplier_returns.php')
+                                     ? 'bg-blue-600 text-white shadow-md'
+                                     : 'text-blue-100 hover:bg-blue-700 hover:text-white'; ?>">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7h18M7 11h10m-9 4h8M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z"/>
+                    </svg>
+                    <span class="font-medium">Supplier Returns</span>
+                </a>
+
                 <!-- Inventory Audit -->
                 <a href="inventory_audit.php"
                    class="flex items-center gap-3 px-4 py-3 rounded-lg transition
