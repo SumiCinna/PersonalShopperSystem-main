@@ -176,42 +176,18 @@ require_once '../../includes/inventory_header.php';
                                 <p class="text-[10px] text-slate-400 text-center mt-2">Physical count off the truck</p>
                             </div>
 
-                            <!-- Accepted Block -->
-                            <div class="bg-white p-3 rounded-lg border border-emerald-200 shadow-sm flex flex-col gap-2 transition-colors focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-100 relative">
-                                <div class="absolute top-0 right-0 bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-bl-lg rounded-tr-lg">GOOD</div>
-                                <div>
-                                    <label class="flex items-center text-[11px] font-bold text-emerald-700 tracking-wider uppercase mb-1">
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor" class="w-3.5 h-3.5 mr-1 text-emerald-600"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                                        Accepted Qty
-                                    </label>
-                                    <input type="number" min="0" max="<?php echo (int)$pending; ?>" value="<?php echo (int)$pending; ?>" name="accepted_qty[]" class="w-full rounded border-0 border-b-2 border-emerald-200 px-2 py-2 text-2xl font-black text-emerald-900 bg-transparent text-center focus:ring-0 focus:border-emerald-500 accepted-input" <?php echo $pending === 0 ? 'readonly' : ''; ?>>
-                                </div>
-                                <div class="grid grid-cols-2 gap-2 mt-auto">
-                                    <div class="<?php echo ($item['category'] === 'Fresh Produce') ? 'col-span-2' : ''; ?>">
-                                        <label class="block text-[10px] uppercase text-emerald-800 font-semibold mb-1">Batch #</label>
-                                        <input type="text" name="batch_number[]" value="<?php echo $defaultBatch; ?>" class="w-full rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs focus:ring-0 text-slate-500 cursor-not-allowed" placeholder="Batch #" readonly>
-                                    </div>
-                                    <?php if ($item['category'] !== 'Fresh Produce'): ?>
-                                    <div>
-                                        <label class="block text-[10px] uppercase text-emerald-800 font-semibold mb-1">Expiry Date</label>
-                                        <input type="date" name="expiry_date[]" class="w-full rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-slate-700 focus:ring-emerald-500 focus:border-emerald-500">
-                                    </div>
-                                    <?php else: ?>
-                                        <input type="hidden" name="expiry_date[]" value="">
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-
                             <!-- Rejected Block -->
                             <div class="bg-white p-3 rounded-lg border border-red-200 shadow-sm flex flex-col gap-2 transition-colors focus-within:border-red-400 focus-within:ring-2 focus-within:ring-red-100 relative">
                                 <div class="absolute top-0 right-0 bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-bl-lg rounded-tr-lg">DEFECTIVE</div>
-                                <div>
-                                    <label class="flex items-center text-[11px] font-bold text-red-700 tracking-wider uppercase mb-1">
+                                
+                                <div class="flex-grow flex flex-col justify-center mt-3">
+                                    <label class="flex items-center justify-center text-[11px] font-bold text-red-700 tracking-wider uppercase mb-1">
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor" class="w-3.5 h-3.5 mr-1 text-red-600"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                                         Rejected Qty
                                     </label>
-                                    <input type="number" min="0" max="<?php echo (int)$pending; ?>" value="0" name="rejected_qty[]" class="w-full rounded border-0 border-b-2 border-red-200 px-2 py-2 text-2xl font-black text-red-900 bg-transparent text-center focus:ring-0 focus:border-red-500 rejected-input" <?php echo $pending === 0 ? 'readonly' : ''; ?>>
+                                    <input type="number" min="0" max="<?php echo (int)$pending; ?>" value="0" name="rejected_qty[]" class="w-full rounded border-0 border-b-2 border-red-200 px-2 py-2 text-3xl font-black text-red-900 bg-transparent text-center focus:ring-0 focus:border-red-500 rejected-input" <?php echo $pending === 0 ? 'readonly' : ''; ?>>
                                 </div>
+
                                 <div class="mt-auto">
                                     <label class="block text-[10px] uppercase text-red-800 font-semibold mb-1">Reject Reason</label>
                                     <select name="reject_reason[]" class="w-full rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-slate-700 focus:ring-red-500 focus:border-red-500">
@@ -225,6 +201,43 @@ require_once '../../includes/inventory_header.php';
                                         <option value="wrong_item">Wrong Item</option>
                                         <option value="other">Other</option>
                                     </select>
+                                </div>
+                            </div>
+
+                            <!-- Accepted Block -->
+                            <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-300 shadow-sm flex flex-col gap-2 relative">
+                                <div class="absolute top-0 right-0 bg-emerald-200 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-bl-lg rounded-tr-lg">GOOD / ACCEPTED</div>
+                                
+                                <div class="mt-3">
+                                    <label class="block text-[10px] uppercase text-emerald-800 font-semibold mb-1">Batch #</label>
+                                    <input type="text" name="batch_number[]" value="<?php echo $defaultBatch; ?>" class="w-full rounded border border-emerald-300 bg-white px-2 py-1.5 text-xs focus:ring-0 text-slate-500 cursor-not-allowed text-center font-mono" readonly>
+                                </div>
+
+                                <div class="flex-grow flex flex-col justify-center mt-2">
+                                    <label class="flex items-center justify-center text-[11px] font-bold text-emerald-800 tracking-wider uppercase mb-1">
+                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor" class="w-3.5 h-3.5 mr-1 text-emerald-600"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                                        Accepted Qty (Auto)
+                                    </label>
+                                    <input type="number" value="<?php echo (int)$pending; ?>" name="accepted_qty[]" class="w-full rounded border-0 border-b-2 border-emerald-300 px-2 py-2 text-3xl font-black text-emerald-900 bg-transparent text-center focus:ring-0 accepted-input cursor-not-allowed" readonly>
+                                </div>
+
+                                <div class="mt-auto space-y-2">
+                                    <div class="grid grid-cols-2 gap-2">
+                                        
+                                        <?php if ($item['category'] !== 'Fresh Produce'): ?>
+                                            <div>
+                                                <label class="block text-[9px] uppercase text-emerald-800 font-semibold mb-1">Manufacture Date</label>
+                                                <input type="date" name="mfg_date[]" class="w-full rounded border border-emerald-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:ring-emerald-500 focus:border-emerald-500">
+                                            </div>
+                                            <div>
+                                                <label class="block text-[9px] uppercase text-emerald-800 font-semibold mb-1">Expiry Date</label>
+                                                <input type="date" name="expiry_date[]" class="w-full rounded border border-emerald-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:ring-emerald-500 focus:border-emerald-500">
+                                            </div>
+                                        <?php else: ?>
+                                            <input type="hidden" name="mfg_date[]" value="">
+                                            <input type="hidden" name="expiry_date[]" value="">
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             </div>
 
@@ -326,44 +339,77 @@ document.querySelectorAll('.space-y-4 > div').forEach(container => {
     const accepted = container.querySelector('.accepted-input');
     const rejected = container.querySelector('.rejected-input');
 
-    if (!delivered || !accepted || !rejected) return;
+    if (delivered && accepted && rejected) {
+        function syncValues() {
+            const d = Number(delivered.value || 0);
+            let r = Number(rejected.value || 0);
 
-    function syncValues() {
-        const d = Number(delivered.value || 0);
-        let a = Number(accepted.value || 0);
-        let r = Number(rejected.value || 0);
-
-        if ((a + r) > d) {
-            if (document.activeElement === accepted) {
-                // User is changing accepted, force rejected to match remainder.
-                r = Math.max(d - a, 0);
+            // Prevent rejecting more than delivered
+            if (r > d) {
+                r = d;
                 rejected.value = r;
-            } else if (document.activeElement === rejected) {
-                // User is changing rejected, force accepted to match remainder.
-                a = Math.max(d - r, 0);
-                accepted.value = a;
+            }
+
+            // Prevent negative rejection
+            if (r < 0) {
+                r = 0;
+                rejected.value = 0;
+            }
+
+            // Automatically calculate accepted
+            const a = d - r;
+            accepted.value = a;
+            
+            // Add visual validation warning if they try to cheat HTML
+            if (a < 0) {
+                delivered.classList.add('text-red-600');
             } else {
-                // Fallback, re-adjust accepted.
-                a = Math.max(d - r, 0);
-                accepted.value = a;
+                delivered.classList.remove('text-red-600');
             }
         }
-        
-        // Add visual validation warning if they somehow go over
-        if ((a + r) > d) {
-            delivered.classList.add('text-red-600');
-        } else {
-            delivered.classList.remove('text-red-600');
-        }
+
+        delivered.addEventListener('input', syncValues);
+        rejected.addEventListener('input', syncValues);
     }
 
-    delivered.addEventListener('input', () => {
-        accepted.value = delivered.value;
-        rejected.value = 0;
-        syncValues();
-    });
-    
-    accepted.addEventListener('input', syncValues);
-    rejected.addEventListener('input', syncValues);
+    // Live Date Validation for Manufacture Date and Expiry Date
+    const mfgInput = container.querySelector('input[name="mfg_date[]"]');
+    const expInput = container.querySelector('input[name="expiry_date[]"]');
+    const rejectSelect = container.querySelector('select[name="reject_reason[]"]');
+
+    if (mfgInput && expInput) {
+        function validateDates() {
+            if (!mfgInput.value) return;
+
+            // Ensure expiry date calendar physically cannot go before mfg date
+            expInput.min = mfgInput.value;
+
+            if (expInput.value) {
+                const mfgDate = new Date(mfgInput.value);
+                const expDate = new Date(expInput.value);
+
+                // Validation 1: Expiry before Manufacture Date
+                if (expDate < mfgDate) {
+                    alert('Error: Expiry Date cannot be before the Manufacture Date.');
+                    expInput.value = '';
+                    return;
+                }
+
+                // Validation 2: Expiry is less than 1 month from Manufacture Date
+                const oneMonthLater = new Date(mfgDate);
+                oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
+
+                if (expDate < oneMonthLater) {
+                    alert('Warning: Expiry is less than 1 month from Manufacture Date. The item is nearing expiration.');
+                    if (rejectSelect) {
+                        rejectSelect.value = 'near_expiry';
+                    }
+                }
+            }
+        }
+
+        mfgInput.addEventListener('change', validateDates);
+        expInput.addEventListener('change', validateDates);
+    }
 });
 </script>

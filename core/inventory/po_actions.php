@@ -66,6 +66,7 @@ if ($action === 'create_po') {
     }
 
     $productIds = $_POST['product_id'] ?? [];
+    $orderTypes = $_POST['order_type'] ?? [];
     $orderedQtys = $_POST['ordered_qty'] ?? [];
     $unitCosts = $_POST['unit_cost'] ?? [];
 
@@ -86,24 +87,41 @@ if ($action === 'create_po') {
     if (!$supplierExists) {
         redirect_with_message('../../modules/inventory/purchase_orders.php', 'Selected supplier does not exist or is inactive.', 'error');
     }
+    
+    // Fetch product details to get pcs_per_box
+    $pcsMap = [];
+    $productIdsList = array_map('intval', $productIds);
+    if (!empty($productIdsList)) {
+        $inIds = implode(',', $productIdsList);
+        $prodRes = $conn->query("SELECT product_id, pcs_per_box FROM products WHERE product_id IN ($inIds)");
+        while ($row = $prodRes->fetch_assoc()) {
+            $pcsMap[$row['product_id']] = (int)$row['pcs_per_box'];
+        }
+    }
 
     $lines = [];
     $subtotal = 0.0;
 
     for ($i = 0; $i < count($productIds); $i++) {
         $productId = (int)$productIds[$i];
+        $orderType = trim($orderTypes[$i] ?? 'retail');
         $qty = (int)($orderedQtys[$i] ?? 0);
         $cost = (float)($unitCosts[$i] ?? 0);
 
         if ($productId <= 0 || $qty <= 0 || $cost <= 0) {
             continue;
         }
+        
+        $pcsPerBox = $pcsMap[$productId] ?? 1;
+        $totalPcs = ($orderType === 'wholesale') ? ($qty * $pcsPerBox) : $qty;
 
         $lineTotal = $qty * $cost;
         $subtotal += $lineTotal;
         $lines[] = [
             'product_id' => $productId,
-            'qty' => $qty,
+            'qty' => $qty, // This is boxes if wholesale, pcs if retail
+            'total_pcs' => $totalPcs,
+            'order_type' => $orderType,
             'cost' => $cost,
             'line_total' => $lineTotal,
         ];
@@ -132,13 +150,17 @@ if ($action === 'create_po') {
         $poId = (int)$conn->insert_id;
         $insertPo->close();
 
+        // Use total_pcs mapping in poi.ordered_qty so system tracks physical stock accurately over receiving.
         $insertItem = $conn->prepare(
-            "INSERT INTO purchase_order_items (po_id, product_id, ordered_qty, unit_cost, line_total) VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO purchase_order_items (po_id, product_id, ordered_qty, unit_cost, line_total, order_type, box_quantity) VALUES (?, ?, ?, ?, ?, ?, ?)"
         );
         if (!$insertItem) throw new Exception($conn->error);
 
         foreach ($lines as $line) {
-            $insertItem->bind_param('iiidd', $poId, $line['product_id'], $line['qty'], $line['cost'], $line['line_total']);
+            $ordered_qty = $line['total_pcs']; // Core system uses physical pieces for receiving logic
+            $box_qty = $line['order_type'] === 'wholesale' ? $line['qty'] : 0;
+            
+            $insertItem->bind_param('iiiddsi', $poId, $line['product_id'], $ordered_qty, $line['cost'], $line['line_total'], $line['order_type'], $box_qty);
             if (!$insertItem->execute()) throw new Exception($insertItem->error);
         }
         $insertItem->close();
@@ -192,6 +214,7 @@ if ($action === 'receive_items') {
     $acceptedQtys = $_POST['accepted_qty'] ?? [];
     $rejectedQtys = $_POST['rejected_qty'] ?? [];
     $batchNumbers = $_POST['batch_number'] ?? [];
+    $mfgDates = $_POST['mfg_date'] ?? [];
     $expiryDates = $_POST['expiry_date'] ?? [];
     $rejectReasons = $_POST['reject_reason'] ?? [];
 
@@ -230,8 +253,8 @@ if ($action === 'receive_items') {
         );
 
         $insertReceivingItem = $conn->prepare(
-            'INSERT INTO po_receiving_items (receiving_id, po_item_id, product_id, received_qty, accepted_qty, rejected_qty, batch_number, expiry_date, reject_reason)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO po_receiving_items (receiving_id, po_item_id, product_id, received_qty, accepted_qty, rejected_qty, batch_number, manufacture_date, expiry_date, reject_reason)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
 
         $updatePoItem = $conn->prepare(
@@ -273,6 +296,7 @@ if ($action === 'receive_items') {
 
             $productId = (int)$item['product_id'];
             $batch = trim($batchNumbers[$i] ?? '');
+            $mfg = trim($mfgDates[$i] ?? '');
             $expiry = trim($expiryDates[$i] ?? '');
             $reason = trim($rejectReasons[$i] ?? 'other');
             $reasonNotes = '';
@@ -283,11 +307,12 @@ if ($action === 'receive_items') {
                 $reason = 'other';
             }
 
-            $expiryValue = $expiry !== '' ? $expiry : null;
-            $rejectReasonForReceiving = $rejected > 0 ? $reason : null;
+            $mfgValue = ($mfg !== '') ? $mfg : null;
+            $expiryValue = ($expiry !== '') ? $expiry : null;
+            $rejectReasonForReceiving = ($rejected > 0) ? $reason : null;
 
             $insertReceivingItem->bind_param(
-                'iiiiiisss',
+                'iiiiiissss',
                 $receivingId,
                 $poItemId,
                 $productId,
@@ -295,6 +320,7 @@ if ($action === 'receive_items') {
                 $accepted,
                 $rejected,
                 $batch,
+                $mfgValue,
                 $expiryValue,
                 $rejectReasonForReceiving
             );

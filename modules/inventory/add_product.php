@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once '../../config/config.php';
-
+// modules/inventory/add_product.php
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
     header("Location: ../../inventory-login.php");
     exit();
@@ -28,6 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $unit_measure     = !empty($_POST['unit_measure']) ? $_POST['unit_measure'] : NULL;
     $stock            = intval($_POST['stock']);
     $low_stock_threshold = intval($_POST['low_stock_threshold']);
+    $pcs_per_box      = max(1, intval($_POST['pcs_per_box'] ?? 1));
     $status           = $_POST['status'];
     $description      = trim($_POST['description']);
     $image_url        = trim($_POST['image_url']);
@@ -45,13 +46,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "A product with this SKU already exists! Please use a unique SKU.";
         } else {
             $insert_query = "INSERT INTO products 
-                (sku, name, brand, category, cost_price, price, discount_price, unit_value, unit_measure, stock, low_stock_threshold, status, description, image_url) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                (sku, name, brand, category, cost_price, price, discount_price, unit_value, unit_measure, stock, low_stock_threshold, pcs_per_box, status, description, image_url) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
             $stmt = $conn->prepare($insert_query);
-            $stmt->bind_param("ssssddddsiisss",
-                $sku, $name, $brand, $category, $cost_price, $price, $discount_price,
-                $unit_value, $unit_measure, $stock, $low_stock_threshold,
+            $stmt->bind_param("ssssddddsiiisss",
+                $sku, $name, $brand, $category,
+                $cost_price, $price, $discount_price,
+                $unit_value, $unit_measure,
+                $stock, $low_stock_threshold, $pcs_per_box,
                 $status, $description, $image_url
             );
 
@@ -66,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $name,
                     null,
                     null,
-                    "SKU: $sku | Stock: $stock | Price: ₱$price | Status: $status"
+                    "SKU: $sku | Stock: $stock | Price: ₱$price | Pcs/Box: $pcs_per_box | Status: $status"
                 );
 
                 header("Location: products.php");
@@ -138,7 +141,7 @@ require_once '../../includes/inventory_header.php';
                                 <option value="Noodles">Noodles</option>
                                 <option value="Snacks">Snacks</option>
                                 <option value="Cooking Essentials">Cooking Essentials</option>
-                                <option value="Meat & Poultry">Meat &amp; Poultry</option>
+                                <option value="Meat &amp; Poultry">Meat &amp; Poultry</option>
                             </select>
                         </div>
                     </div>
@@ -169,6 +172,21 @@ require_once '../../includes/inventory_header.php';
                                 <option value="pack">Pack</option>
                             </select>
                         </div>
+                    </div>
+
+                    <!-- Pieces Per Box -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">
+                            Pieces per Box
+                            <span class="ml-1 text-xs font-normal text-gray-400">(used for wholesale PO ordering)</span>
+                        </label>
+                        <div class="flex items-center gap-3">
+                            <input type="number" name="pcs_per_box" id="pcs_per_box" value="1" min="1" max="9999"
+                                oninput="if(parseInt(this.value) < 1 || !this.value) this.value = 1; if(this.value.length > 4) this.value = this.value.slice(0,4);"
+                                class="w-32 px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none font-bold text-center">
+                            <span class="text-sm text-gray-500">pcs / box</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">Set to 1 if not sold in boxes or N/A.</p>
                     </div>
                 </div>
 

@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once '../../config/config.php';
-
+// modules/inventory/edit_product.php
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
     header("Location: ../../inventory-login.php");
     exit();
@@ -25,36 +25,23 @@ function log_activity($conn, $user_id, $action, $product_id, $product_name, $fie
 }
 
 function normalize_compare_value(string $field_key, $value): string {
-    if ($value === null) {
-        return '';
-    }
-
+    if ($value === null) return '';
     if (in_array($field_key, ['cost_price', 'price', 'discount_price', 'unit_value'], true)) {
-        if ($value === '' || $value === false) {
-            return '';
-        }
+        if ($value === '' || $value === false) return '';
         return number_format((float) $value, 2, '.', '');
     }
-
-    if (in_array($field_key, ['stock', 'low_stock_threshold'], true)) {
-        if ($value === '' || $value === false) {
-            return '';
-        }
+    if (in_array($field_key, ['stock', 'low_stock_threshold', 'pcs_per_box'], true)) {
+        if ($value === '' || $value === false) return '';
         return (string) ((int) $value);
     }
-
     return trim((string) $value);
 }
 
 function format_audit_value(string $field_key, $value): string {
-    if ($value === null || $value === '') {
-        return '—';
-    }
-
+    if ($value === null || $value === '') return '—';
     if (in_array($field_key, ['cost_price', 'price', 'discount_price', 'unit_value'], true)) {
         return number_format((float) $value, 2, '.', '');
     }
-
     return (string) $value;
 }
 
@@ -83,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $unit_measure        = !empty($_POST['unit_measure']) ? $_POST['unit_measure'] : NULL;
     $stock               = intval($_POST['stock']);
     $low_stock_threshold = intval($_POST['low_stock_threshold']);
+    $pcs_per_box         = max(1, intval($_POST['pcs_per_box'] ?? 1));
     $status              = $_POST['status'];
     $description         = trim($_POST['description']);
     $image_url           = trim($_POST['image_url']);
@@ -109,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'discount_price'      => ['label' => 'Discount Price', 'old' => $product['discount_price'],      'new' => $discount_price],
                 'stock'               => ['label' => 'Stock',          'old' => $product['stock'],               'new' => $stock],
                 'low_stock_threshold' => ['label' => 'Low Stock At',   'old' => $product['low_stock_threshold'], 'new' => $low_stock_threshold],
+                'pcs_per_box'         => ['label' => 'Pcs per Box',    'old' => $product['pcs_per_box'] ?? 1,    'new' => $pcs_per_box],
                 'status'              => ['label' => 'Status',         'old' => $product['status'],              'new' => $status],
                 'unit_value'          => ['label' => 'Unit Value',     'old' => $product['unit_value'],          'new' => $unit_value],
                 'unit_measure'        => ['label' => 'Unit Measure',   'old' => $product['unit_measure'],        'new' => $unit_measure],
@@ -133,15 +122,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $update_query = "UPDATE products SET 
                 sku = ?, name = ?, brand = ?, category = ?, cost_price = ?, price = ?, discount_price = ?,
-                unit_value = ?, unit_measure = ?, stock = ?, low_stock_threshold = ?, 
+                unit_value = ?, unit_measure = ?, stock = ?, low_stock_threshold = ?, pcs_per_box = ?,
                 status = ?, description = ?, image_url = ? 
                 WHERE product_id = ?";
 
             $stmt = $conn->prepare($update_query);
-            $stmt->bind_param("ssssddddsiisssi",
-                $sku, $name, $brand, $category, $cost_price, $price, $discount_price,
-                $unit_value, $unit_measure, $stock, $low_stock_threshold,
-                $status, $description, $image_url, $product_id
+            $stmt->bind_param("ssssddddsiiisssi",
+                $sku, $name, $brand, $category,
+                $cost_price, $price, $discount_price,
+                $unit_value, $unit_measure,
+                $stock, $low_stock_threshold, $pcs_per_box,
+                $status, $description, $image_url,
+                $product_id
             );
 
             if ($stmt->execute()) {
@@ -270,6 +262,23 @@ require_once '../../includes/inventory_header.php';
                                 ?>
                             </select>
                         </div>
+                    </div>
+
+                    <!-- Pieces Per Box -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">
+                            Pieces per Box
+                            <span class="ml-1 text-xs font-normal text-gray-400">(used for wholesale PO ordering)</span>
+                        </label>
+                        <div class="flex items-center gap-3">
+                            <input type="number" name="pcs_per_box" id="pcs_per_box" 
+                                value="<?php echo intval($product['pcs_per_box'] ?? 1); ?>" 
+                                min="1" max="9999"
+                                oninput="if(parseInt(this.value) < 1 || !this.value) this.value = 1; if(this.value.length > 4) this.value = this.value.slice(0,4);"
+                                class="w-32 px-4 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none font-bold text-center">
+                            <span class="text-sm text-gray-500">pcs / box</span>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">Set to 1 if not sold in boxes or N/A.</p>
                     </div>
                 </div>
 
