@@ -141,7 +141,7 @@ require_once '../../includes/inventory_header.php';
     <div class="flex items-center justify-between mb-8">
         <div>
             <h1 class="text-3xl font-bold text-gray-800">Inventory Audit Trail</h1>
-            <p class="text-gray-500 text-sm mt-1">Full history of all inventory changes — who did what and when</p>
+            <p class="text-gray-500 text-sm mt-1">Full history of all inventory changes </p>
         </div>
         <a href="dashboard.php" class="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg transition text-sm">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

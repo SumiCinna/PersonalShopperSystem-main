@@ -62,6 +62,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         $payment_method = $_POST['payment_method'];
         $payment_reference = trim($_POST['payment_reference'] ?? '');
+        
+        // If prepaid (online payment), grab the existing reference
+        if ($payment_method === 'prepaid') {
+            $payment_reference = trim($_POST['online_reference_readonly'] ?? 'ONLINE-PAID');
+        }
+
         $amount_tendered = isset($_POST['amount_tendered']) && $_POST['amount_tendered'] !== '' ? floatval($_POST['amount_tendered']) : NULL;
         $change_amount = isset($_POST['change_amount']) && $_POST['change_amount'] !== '' ? floatval($_POST['change_amount']) : NULL;
 

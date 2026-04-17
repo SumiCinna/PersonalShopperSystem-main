@@ -35,7 +35,7 @@ $cart_total_items = array_sum($user_cart);
 $selected_category = isset($_GET['category']) ? $_GET['category'] : '';
 $search_query = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-$sql = "SELECT product_id, name, brand, category, price, discount_price, stock, image_url 
+$sql = "SELECT product_id, name, brand, category, price, discount_price, stock, image_url, description 
         FROM products 
         WHERE status = 'active'";
 $params = [];
@@ -149,9 +149,9 @@ require_once '../../includes/customer_header.php';
                                     </svg>
                                 </button>
 
-                                <div class="h-48 w-full bg-gray-100 flex  justify-center items-center overflow-hidden">
+                                <div onclick="openProductModal(<?php echo htmlspecialchars(json_encode($product)); ?>)" class="h-48 w-full bg-gray-100 flex justify-center items-center overflow-hidden cursor-pointer group-hover:opacity-95 transition">
                                     <?php if ($product['image_url']): ?>
-                                        <img src="<?php echo htmlspecialchars($product['image_url']); ?>" alt="<?php echo htmlspecialchars($product['name']); ?>" class="object-contain h-full w-full p-2 transition-transform duration-300">
+                                        <img src="<?php echo htmlspecialchars($product['image_url']); ?>" alt="<?php echo htmlspecialchars($product['name']); ?>" class="object-contain h-full w-full p-2 transition-transform duration-300 group-hover:scale-105">
                                     <?php else: ?>
                                         <svg class="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                                     <?php endif; ?>
@@ -159,7 +159,7 @@ require_once '../../includes/customer_header.php';
                                 
                                 <div class="p-5 flex-1 flex flex-col">
                                     <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1"><?php echo htmlspecialchars($product['category']); ?></div>
-                                    <h3 class="font-bold text-gray-900 leading-tight mb-1 line-clamp-2"><?php echo htmlspecialchars($product['name']); ?></h3>
+                                    <h3 onclick="openProductModal(<?php echo htmlspecialchars(json_encode($product)); ?>)" title="Click for details" class="font-bold text-gray-900 leading-tight mb-1 line-clamp-2 cursor-pointer hover:text-blue-600 transition-colors"><?php echo htmlspecialchars($product['name']); ?></h3>
                                     <p class="text-xs text-gray-500 mb-3"><?php echo htmlspecialchars($product['brand']); ?></p>
                                     
                                     <div class="mt-auto flex justify-between items-end mb-4">
@@ -219,6 +219,53 @@ require_once '../../includes/customer_header.php';
         </div>
     </div>
 </main>
+
+<!-- Product Details Modal -->
+<div id="product-modal" tabindex="-1" aria-hidden="true" class="fixed inset-0 z-[60] hidden w-full p-4 overflow-x-hidden overflow-y-auto bg-gray-900/50 backdrop-blur-sm flex justify-center items-center opacity-0 transition-opacity duration-300">
+    <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl transform scale-95 transition-transform duration-300" id="product-modal-content">
+        
+        <!-- Modal header -->
+        <button type="button" onclick="closeProductModal()" class="absolute top-4 right-4 text-gray-400 bg-transparent hover:bg-gray-100 hover:text-gray-900 rounded-lg text-sm p-1.5 ml-auto inline-flex items-center transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+
+        <!-- Modal body -->
+        <div class="p-6 md:p-8 flex flex-col md:flex-row gap-6">
+            
+            <div class="w-full md:w-1/2 flex justify-center items-center bg-gray-50 rounded-xl p-4">
+                <img id="modal-product-img" src="" alt="Product Image" class="max-h-64 object-contain mix-blend-multiply">
+                <svg id="modal-product-img-fallback" class="w-24 h-24 text-gray-300 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            </div>
+            
+            <div class="w-full md:w-1/2 flex flex-col justify-center">
+                <div class="flex items-center gap-2 mb-2">
+                    <span id="modal-product-category" class="bg-blue-100 text-blue-800 text-[10px] font-bold px-2.5 py-0.5 rounded uppercase tracking-wider">Category</span>
+                    <span id="modal-product-brand" class="text-[11px] text-gray-500 font-semibold tracking-wide">Brand</span>
+                </div>
+                
+                <h3 id="modal-product-name" class="text-2xl font-black text-gray-900 leading-tight mb-4">Product Name</h3>
+                
+                <div class="mb-4">
+                    <p id="modal-product-discount-price" class="text-3xl font-black text-red-600 hidden">₱0.00</p>
+                    <div class="flex items-end gap-2">
+                        <p id="modal-product-price" class="text-3xl font-black text-green-700">₱0.00</p>
+                        <p id="modal-product-original-price" class="text-sm font-bold tracking-wide text-gray-400 line-through hidden mb-1.5">₱0.00</p>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 rounded-lg p-3 mb-6 border border-gray-100">
+                    <h4 class="text-xs font-bold text-gray-800 uppercase tracking-widest mb-1.5">Description</h4>
+                    <p id="modal-product-desc" class="text-sm text-gray-600 leading-relaxed max-h-32 overflow-hidden overflow-y-auto pr-2">No description available.</p>
+                </div>
+                
+                <div class="mt-auto flex items-center justify-between">
+                    <span id="modal-product-stock" class="text-sm font-bold bg-gray-100 px-3 py-1 rounded text-gray-700">0 left in stock</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
 
 <a href="cart.php" id="checkout-fab" class="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold px-5 py-3.5 rounded-2xl shadow-2xl transition-all duration-200 group" style="box-shadow: 0 8px 30px rgba(45,91,227,0.45);">
     <div class="relative">
@@ -374,6 +421,84 @@ function toggleWishlist(productId, buttonElement) {
     })
     .catch(error => console.error('Error:', error));
 }
+
+// --- Product Modal Logic ---
+const modalEl = document.getElementById('product-modal');
+const modalContent = document.getElementById('product-modal-content');
+
+function openProductModal(product) {
+    // Populate Image
+    if (product.image_url) {
+        document.getElementById('modal-product-img').src = product.image_url;
+        document.getElementById('modal-product-img').classList.remove('hidden');
+        document.getElementById('modal-product-img-fallback').classList.add('hidden');
+    } else {
+        document.getElementById('modal-product-img').classList.add('hidden');
+        document.getElementById('modal-product-img-fallback').classList.remove('hidden');
+    }
+
+    // Populate Details
+    document.getElementById('modal-product-name').textContent = product.name;
+    document.getElementById('modal-product-brand').textContent = product.brand || 'Unbranded';
+    document.getElementById('modal-product-category').textContent = product.category;
+    document.getElementById('modal-product-desc').innerHTML = product.description ? product.description.replace(/\n/g, '<br>') : '<span class="italic text-gray-400">No description available.</span>';
+    
+    // Pricing Logic
+    const originalPrice = parseFloat(product.price).toFixed(2);
+    const discountPrice = parseFloat(product.discount_price).toFixed(2);
+    
+    if (product.discount_price > 0 && product.discount_price < product.price) {
+        document.getElementById('modal-product-price').classList.add('hidden');
+        document.getElementById('modal-product-discount-price').classList.remove('hidden');
+        document.getElementById('modal-product-discount-price').textContent = '₱' + discountPrice;
+        
+        document.getElementById('modal-product-original-price').classList.remove('hidden');
+        document.getElementById('modal-product-original-price').textContent = '₱' + originalPrice;
+    } else {
+        document.getElementById('modal-product-price').classList.remove('hidden');
+        document.getElementById('modal-product-price').textContent = '₱' + originalPrice;
+        
+        document.getElementById('modal-product-discount-price').classList.add('hidden');
+        document.getElementById('modal-product-original-price').classList.add('hidden');
+    }
+
+    // Stock Badge
+    const stockEl = document.getElementById('modal-product-stock');
+    if (product.stock > 0) {
+        stockEl.textContent = product.stock + ' left in stock';
+        stockEl.className = parseInt(product.stock) <= 10 ? 'text-sm font-black bg-orange-100 text-orange-700 px-3 py-1 rounded' : 'text-sm font-black bg-emerald-100 text-emerald-800 px-3 py-1 rounded';
+    } else {
+        stockEl.textContent = 'Out of Stock';
+        stockEl.className = 'text-sm font-black bg-red-100 text-red-700 px-3 py-1 rounded';
+    }
+
+    // Open Modal
+    modalEl.classList.remove('hidden');
+    // slight delay to allow display:block to render before applying opacity transition
+    setTimeout(() => {
+        modalEl.classList.remove('opacity-0');
+        modalContent.classList.remove('scale-95');
+        modalContent.classList.add('scale-100');
+    }, 10);
+    
+    document.body.style.overflow = 'hidden'; // Prevent background scrolling
+}
+
+function closeProductModal() {
+    modalEl.classList.add('opacity-0');
+    modalContent.classList.remove('scale-100');
+    modalContent.classList.add('scale-95');
+    
+    setTimeout(() => {
+        modalEl.classList.add('hidden');
+        document.body.style.overflow = ''; 
+    }, 300); // Wait for transition
+}
+
+// Close modal when clicking outside the box
+modalEl.addEventListener('click', (e) => {
+    if (e.target === modalEl) closeProductModal();
+});
 </script>
 
 <?php 

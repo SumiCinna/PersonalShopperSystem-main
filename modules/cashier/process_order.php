@@ -204,7 +204,7 @@ require_once '../../includes/cashier_header.php';
                         </select>
                     </div>
 
-                    <div id="cash_ui" class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                    <div id="cash_ui" class="hidden bg-blue-50 p-4 rounded-lg border border-blue-200">
                         <label class="block text-sm font-bold text-blue-900 mb-2">Cash Received (₱)</label>
                         <input type="number" step="0.01" name="amount_tendered" id="amount_tendered" class="w-full bg-white border-2 border-blue-300 text-blue-900 rounded-lg p-4 font-black font-mono text-3xl text-right focus:border-blue-600 focus:ring-0 shadow-inner" placeholder="0.00" oninput="calculateChange()">
                         
@@ -217,7 +217,14 @@ require_once '../../includes/cashier_header.php';
 
                     <div id="online_ui" class="hidden bg-yellow-50 p-4 rounded-lg border border-yellow-200">
                         <label class="block text-sm font-bold text-yellow-900 mb-2">Reference Number</label>
-                        <input type="text" name="payment_reference" id="payment_reference" maxlength="11" inputmode="numeric" pattern="\d{1,11}" value="<?php echo ($order['balance_due'] <= 0) ? htmlspecialchars($order['online_reference'] ?? '') : ''; ?>" class="w-full bg-white border-2 border-yellow-300 text-yellow-900 rounded-lg p-4 font-mono font-bold text-lg focus:border-yellow-600 focus:ring-0 shadow-inner" placeholder="Enter Ref No.">
+                        <input type="text" name="payment_reference" id="payment_reference" maxlength="11" inputmode="numeric" pattern="\d{1,11}" class="w-full bg-white border-2 border-yellow-300 text-yellow-900 rounded-lg p-4 font-mono font-bold text-lg focus:border-yellow-600 focus:ring-0 shadow-inner" placeholder="Enter Ref No.">
+                    </div>
+
+                    <div id="prepaid_ui" class="hidden bg-green-50 p-5 rounded-lg border border-green-200 text-center">
+                        <svg class="w-10 h-10 text-green-500 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <h4 class="text-green-800 font-black text-lg">Order is Fully Paid</h4>
+                        <p class="text-green-600 text-sm mt-1">No balance collection needed. Please finalize.</p>
+                        <input type="hidden" name="online_reference_readonly" value="<?php echo htmlspecialchars($order['online_reference'] ?? ''); ?>">
                     </div>
                 </div>
 
@@ -272,6 +279,7 @@ require_once '../../includes/cashier_header.php';
     const paymentMethodSelect = document.getElementById('payment_method');
     const cashUI = document.getElementById('cash_ui');
     const onlineUI = document.getElementById('online_ui');
+    const prepaidUI = document.getElementById('prepaid_ui');
     const refInput = document.getElementById('payment_reference');
 
     if (refInput) {
@@ -284,12 +292,21 @@ require_once '../../includes/cashier_header.php';
         if (paymentMethodSelect.value === 'cash') {
             cashUI.classList.remove('hidden');
             onlineUI.classList.add('hidden');
+            if (prepaidUI) prepaidUI.classList.add('hidden');
             refInput.required = false;
             amountTenderedInput.required = true;
             calculateChange();
+        } else if (paymentMethodSelect.value === 'prepaid') {
+            cashUI.classList.add('hidden');
+            onlineUI.classList.add('hidden');
+            if (prepaidUI) prepaidUI.classList.remove('hidden');
+            refInput.required = false;
+            amountTenderedInput.required = false;
+            completeBtn.disabled = false;
         } else {
             cashUI.classList.add('hidden');
             onlineUI.classList.remove('hidden');
+            if (prepaidUI) prepaidUI.classList.add('hidden');
             refInput.required = true;
             amountTenderedInput.required = false;
             completeBtn.disabled = false;

@@ -27,7 +27,7 @@ $products = [];
 $purchaseOrders = [];
 
 if ($schemaReady) {
-    $suppliersRes = $conn->query("SELECT supplier_id, name, contact_person, phone FROM suppliers WHERE status = 'active' ORDER BY name ASC");
+    $suppliersRes = $conn->query("SELECT supplier_id, name, contact_person, phone, supplied_categories FROM suppliers WHERE status = 'active' ORDER BY name ASC");
     while ($row = $suppliersRes->fetch_assoc()) {
         $suppliers[] = $row;
     }
@@ -38,6 +38,7 @@ if ($schemaReady) {
             p.name,
             p.sku,
             p.stock,
+            p.category,
             p.low_stock_threshold,
             p.cost_price,
             CASE
@@ -177,10 +178,11 @@ require_once '../../includes/inventory_header.php';
 <main class="flex-1 p-8 overflow-y-auto bg-slate-50">
     <div class="mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
-            <h1 class="text-3xl font-bold text-slate-900">Purchase Orders (PO) & BO Intake</h1>
+            <h1 class="text-3xl font-bold text-slate-900">Purchase Orders (PO) & BO </h1>
             <p class="text-sm text-slate-500 mt-1">Create PO from low stock, track supplier flow, and quality check.</p>
         </div>
         <div class="flex gap-2">
+            <a href="add_supplier.php" class="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition">+ Add Supplier</a>
             <a href="supplier_returns.php" class="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-semibold hover:bg-slate-900 transition">Supplier Returns (BO)</a>
         </div>
     </div>
@@ -226,8 +228,8 @@ require_once '../../includes/inventory_header.php';
                 </div>
 
                 <div>
-                    <label class="text-sm font-semibold text-slate-700">PO Notes</label>
-                    <textarea name="notes" rows="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Optional instructions for supplier"></textarea>
+                    <label class="text-sm font-semibold text-slate-700">PO Notes (Max 100 characters)</label>
+                    <textarea name="notes" rows="2" maxlength="100" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors" placeholder="Optional instructions for supplier..."></textarea>
                 </div>
 
                 <div class="border rounded-lg overflow-hidden">
@@ -369,13 +371,39 @@ require_once '../../includes/inventory_header.php';
 
 <script>
 const products = <?php echo json_encode($products, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
+const suppliers = <?php echo json_encode($suppliers, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 const container = document.getElementById('poItemsContainer');
 const addBtn = document.getElementById('addItemBtn');
 const subtotalEl = document.getElementById('poSubtotal');
+const supplierSelect = document.querySelector('select[name="supplier_id"]');
+
+function getFilteredProducts() {
+    const selectedSupplierId = supplierSelect.value;
+    if (!selectedSupplierId) return [];
+    
+    const supplier = suppliers.find(s => String(s.supplier_id) === String(selectedSupplierId));
+    if (!supplier || !supplier.supplied_categories) return products; // No specific categories -> allow all or whatever logic (we'll allow all for backwards max compatibility)
+    
+    // Parse supplied_categories
+    let allowedCategories = [];
+    try { allowedCategories = JSON.parse(supplier.supplied_categories); } 
+    catch(e) { allowedCategories = supplier.supplied_categories.split(',').map(c => c.trim()); }
+    
+    if (!allowedCategories || allowedCategories.length === 0) return products;
+    
+    return products.filter(p => allowedCategories.includes(p.category));
+}
+
+supplierSelect.addEventListener('change', () => {
+    // When supplier changes, simply reset all rows
+    if (container) container.innerHTML = '';
+    if (addBtn && supplierSelect.value) addItemRow();
+});
 
 function productOptions() {
+    const currentProducts = getFilteredProducts();
     return ['<option value="">Choose product...</option>']
-        .concat(products.map(p => {
+        .concat(currentProducts.map(p => {
             const lowTag = Number(p.stock) <= Number(p.low_stock_threshold) ? ' (LOW)' : '';
             return `<option value="${p.product_id}" data-cost="${p.cost_price}" data-suggested="${p.suggested_qty}">${p.name} [${p.sku}] - Stock: ${p.stock}${lowTag}</option>`;
         }))
@@ -440,6 +468,14 @@ function computeSubtotal() {
     subtotalEl.textContent = subtotal.toFixed(2);
 }
 
-if (addBtn) addBtn.addEventListener('click', addItemRow);
-if (container) addItemRow();
+if (addBtn) addBtn.addEventListener('click', () => {
+    if (!supplierSelect.value) {
+        alert("Please select a supplier first to see their available products.");
+        return;
+    }
+    addItemRow();
+});
+
+// Remove the automatic `if (container) addItemRow();` because they must pick a supplier first.
+if (container && supplierSelect.value) addItemRow();
 </script>

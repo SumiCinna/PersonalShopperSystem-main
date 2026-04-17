@@ -320,6 +320,58 @@ require_once '../../includes/inventory_header.php';
     });
 
     validatePrices();
+
+    // --- Auto-detect Unit of Measure ---
+    const catSelect = document.querySelector('select[name="category"]');
+    const umSelect = document.querySelector('select[name="unit_measure"]');
+    
+    if (catSelect && umSelect) {
+        const categoryUnits = {
+            'Beverages': ['ml', 'L', 'pc', 'pack'],
+            'Canned Goods': ['g', 'kg', 'pc', 'pack'],
+            'Condiments': ['g', 'kg', 'ml', 'L', 'pc', 'pack'],
+            'Dairy': ['g', 'kg', 'ml', 'L', 'pc', 'pack'],
+            'Fresh Produce': ['g', 'kg', 'pc', 'pack'],
+            'Noodles': ['g', 'kg', 'pc', 'pack'],
+            'Snacks': ['g', 'kg', 'pc', 'pack'],
+            'Cooking Essentials': ['g', 'kg', 'ml', 'L', 'pc', 'pack'],
+            'Meat & Poultry': ['g', 'kg', 'pack']
+        };
+
+        const allUnits = {
+            'g': 'Grams (g)',
+            'kg': 'Kilograms (kg)',
+            'ml': 'Milliliters (ml)',
+            'L': 'Liters (L)',
+            'pc': 'Piece (pc)',
+            'pack': 'Pack'
+        };
+
+        let initialUnit = umSelect.value;
+        let isInitialLoad = true;
+
+        function updateUnits() {
+            const selectedCategory = catSelect.value;
+            const currentUnit = isInitialLoad ? initialUnit : umSelect.value;
+            
+            umSelect.innerHTML = '<option value="">None</option>';
+            
+            const allowedUnits = categoryUnits[selectedCategory] || Object.keys(allUnits);
+            
+            allowedUnits.forEach(unit => {
+                const opt = document.createElement('option');
+                opt.value = unit;
+                opt.textContent = allUnits[unit];
+                if (unit === currentUnit) opt.selected = true;
+                umSelect.appendChild(opt);
+            });
+            
+            isInitialLoad = false;
+        }
+
+        catSelect.addEventListener('change', updateUnits);
+        updateUnits();
+    }
 })();
 </script>
 

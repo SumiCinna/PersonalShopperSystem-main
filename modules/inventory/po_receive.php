@@ -36,7 +36,7 @@ if ($schemaReady && $poId > 0) {
     if ($po) {
         $itemsStmt = $conn->prepare(
             "SELECT poi.po_item_id, poi.product_id, poi.ordered_qty, poi.received_qty, poi.rejected_qty, poi.unit_cost,
-                    p.name AS product_name, p.sku
+                    p.name AS product_name, p.sku, p.category
              FROM purchase_order_items poi
              JOIN products p ON p.product_id = poi.product_id
              WHERE poi.po_id = ?
@@ -96,7 +96,7 @@ require_once '../../includes/inventory_header.php';
 <main class="flex-1 p-8 overflow-y-auto bg-slate-50">
     <div class="mb-6 flex items-center justify-between">
         <div>
-            <h1 class="text-3xl font-bold text-slate-900">Receiving Module + Quality Inspection</h1>
+            <h1 class="text-3xl font-bold text-slate-900">Receiving Module and Quality Inspection</h1>
             <p class="text-sm text-slate-500 mt-1">Step 2-4 flow: receive delivery → inspect items → update stock (accepted) + BO return (rejected).</p>
         </div>
         <a href="purchase_orders.php" class="px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-semibold hover:bg-slate-900 transition">← Back to PO</a>
@@ -187,14 +187,18 @@ require_once '../../includes/inventory_header.php';
                                     <input type="number" min="0" max="<?php echo (int)$pending; ?>" value="<?php echo (int)$pending; ?>" name="accepted_qty[]" class="w-full rounded border-0 border-b-2 border-emerald-200 px-2 py-2 text-2xl font-black text-emerald-900 bg-transparent text-center focus:ring-0 focus:border-emerald-500 accepted-input" <?php echo $pending === 0 ? 'readonly' : ''; ?>>
                                 </div>
                                 <div class="grid grid-cols-2 gap-2 mt-auto">
-                                    <div>
+                                    <div class="<?php echo ($item['category'] === 'Fresh Produce') ? 'col-span-2' : ''; ?>">
                                         <label class="block text-[10px] uppercase text-emerald-800 font-semibold mb-1">Batch #</label>
-                                        <input type="text" name="batch_number[]" value="<?php echo $defaultBatch; ?>" class="w-full rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs focus:ring-emerald-500 focus:border-emerald-500" placeholder="Batch #">
+                                        <input type="text" name="batch_number[]" value="<?php echo $defaultBatch; ?>" class="w-full rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs focus:ring-0 text-slate-500 cursor-not-allowed" placeholder="Batch #" readonly>
                                     </div>
+                                    <?php if ($item['category'] !== 'Fresh Produce'): ?>
                                     <div>
                                         <label class="block text-[10px] uppercase text-emerald-800 font-semibold mb-1">Expiry Date</label>
                                         <input type="date" name="expiry_date[]" class="w-full rounded border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs text-slate-700 focus:ring-emerald-500 focus:border-emerald-500">
                                     </div>
+                                    <?php else: ?>
+                                        <input type="hidden" name="expiry_date[]" value="">
+                                    <?php endif; ?>
                                 </div>
                             </div>
 
@@ -211,11 +215,15 @@ require_once '../../includes/inventory_header.php';
                                 <div class="mt-auto">
                                     <label class="block text-[10px] uppercase text-red-800 font-semibold mb-1">Reject Reason</label>
                                     <select name="reject_reason[]" class="w-full rounded border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-slate-700 focus:ring-red-500 focus:border-red-500">
-                                        <option value="other">Other</option>
-                                        <option value="expired">Expired</option>
+                                        <?php if ($item['category'] === 'Fresh Produce'): ?>
+                                            <option value="expired">Perished</option>
+                                        <?php else: ?>
+                                            <option value="expired">Expired</option>
+                                            <option value="near_expiry">Near Expiry</option>
+                                        <?php endif; ?>
                                         <option value="damaged_packaging">Damaged Packaging</option>
                                         <option value="wrong_item">Wrong Item</option>
-                                        <option value="near_expiry">Near Expiry</option>
+                                        <option value="other">Other</option>
                                     </select>
                                 </div>
                             </div>

@@ -25,6 +25,58 @@ if ($lock_result->num_rows > 0) {
 }
 $lock_check->close();
 
+// --- MOCEAN API SMS HELPER ---
+function sendOrderReminderSMS($mobile, $customer_name, $tracking_no, $pickup_datetime, $balance_due) {
+    $api_token = 'apit-BiOR2UIynjLZvKkIgxbHBo4lFERSZ9Xo-hz57j'; // ⚠️ Replace with your NEW token after revoking the old one
+
+    // Convert 09XXXXXXXXX → 639XXXXXXXXX
+    $mobile = trim($mobile);
+    if (str_starts_with($mobile, '09')) {
+        $mobile = '63' . substr($mobile, 1);
+    } elseif (str_starts_with($mobile, '+63')) {
+        $mobile = substr($mobile, 1); // strip the +
+    }
+
+    $pickup_formatted = date('F j, Y \a\t h:i A', strtotime($pickup_datetime));
+
+    if ($balance_due > 0) {
+        $payment_line = "Balance to collect upon pickup: P" . number_format($balance_due, 2) . ". Please prepare the exact amount.";
+    } else {
+        $payment_line = "Your order is fully paid. No payment needed upon pickup.";
+    }
+
+    // Keep message under 160 chars per SMS to avoid using 2 credits
+    $message =
+        "Hi {$customer_name}! Reminder for your PSS order.\n" .
+        "Order Ref: {$tracking_no}\n" .
+        "Pickup: {$pickup_formatted}\n" .
+        "{$payment_line}\n" .
+        "Please go to the pickup counter upon arrival. Thank you!";
+
+    $payload = json_encode([
+        'mocean-api-key'    => $api_token,   // MoceanAPI token used as the API key
+        'mocean-api-secret' => $api_token,   // Same token — update if MoceanAPI gives you a separate secret
+        'mocean-from'       => 'PSS',        // Sender name (max 11 chars, no spaces)
+        'mocean-to'         => $mobile,
+        'mocean-text'       => $message,
+    ]);
+
+    $ch = curl_init('https://rest.moceanapi.com/rest/2/sms');
+    curl_setopt($ch, CURLOPT_POST,           true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS,     $payload);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT,        10);
+    curl_setopt($ch, CURLOPT_HTTPHEADER,     [
+        'Content-Type: application/json',
+        'Accept: application/json',
+    ]);
+    $response = curl_exec($ch);
+    $err      = curl_error($ch);
+    curl_close($ch);
+
+    return ['response' => $response, 'error' => $err];
+}
+
 // --- SEARCH & FILTER ---
 $search      = isset($_GET['search']) ? trim($_GET['search']) : '';
 $date_filter = isset($_GET['date'])   ? trim($_GET['date'])   : '';
@@ -108,6 +160,21 @@ require_once '../../includes/cashier_header.php';
         </div>
     <?php endif; ?>
 
+    <!-- SMS sent toast (shown via JS if ?sms=sent) -->
+    <?php if (isset($_GET['sms']) && $_GET['sms'] === 'sent'): ?>
+        <div id="sms-toast" class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6 rounded shadow-sm flex items-center">
+            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+             SMS reminder sent to customer successfully!
+        </div>
+        <script>setTimeout(() => { const t = document.getElementById('sms-toast'); if(t) t.remove(); }, 4000);</script>
+    <?php endif; ?>
+        <?php if (isset($_GET['sms']) && $_GET['sms'] === 'error'): ?>
+    <div class="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-sm flex items-center">
+        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"></path></svg>
+         SMS failed to send. Check <code>sms_log.txt</code> for details.
+    </div>
+    <?php endif; ?>
+
     <!-- ===== SEARCH & FILTER BAR ===== -->
     <form method="GET" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6 flex flex-col sm:flex-row gap-3 items-end">
         <div class="flex-1">
@@ -146,6 +213,7 @@ require_once '../../includes/cashier_header.php';
                     <th class="p-5 font-bold">Pickup Schedule</th>
                     <th class="p-5 font-bold text-center">Payment</th>
                     <th class="p-5 font-bold text-center">Details</th>
+                    <th class="p-5 font-bold text-center">Notify</th>
                     <th class="p-5 font-bold text-right">Action</th>
                 </tr>
             </thead>
@@ -153,7 +221,6 @@ require_once '../../includes/cashier_header.php';
                 <?php if ($result->num_rows > 0): ?>
                     <?php while ($order = $result->fetch_assoc()): ?>
                         <?php
-                            // ── Payment method with Card fallback ─────────────
                             $pm_display = paymentMethodDisplay($order['payment_method']);
 
                             $pickup_ts = strtotime($order['pickup_datetime']);
@@ -174,7 +241,7 @@ require_once '../../includes/cashier_header.php';
                                 $status_label     = "URGENT";
                             }
 
-                            // Fetch order items for this order
+                            // Fetch order items
                             $items_stmt = $conn->prepare("SELECT oi.quantity, oi.price_at_checkout, p.name
                                 FROM order_items oi JOIN products p ON oi.product_id = p.product_id
                                 WHERE oi.order_id = ?");
@@ -184,7 +251,7 @@ require_once '../../includes/cashier_header.php';
                             $order_items = $items_res->fetch_all(MYSQLI_ASSOC);
                             $items_stmt->close();
 
-                            // Fetch past orders from same customer (last 5, excluding current)
+                            // Fetch past orders from same customer (last 5)
                             $hist_stmt = $conn->prepare("SELECT tracking_no, total_amount, order_status, created_at
                                 FROM orders WHERE user_id = ? AND order_id != ?
                                 ORDER BY created_at DESC LIMIT 5");
@@ -193,6 +260,8 @@ require_once '../../includes/cashier_header.php';
                             $hist_res      = $hist_stmt->get_result();
                             $order_history = $hist_res->fetch_all(MYSQLI_ASSOC);
                             $hist_stmt->close();
+
+                            $has_mobile = !empty($order['mobile']);
                         ?>
                         <tr class="<?php echo $row_class; ?>">
 
@@ -204,8 +273,10 @@ require_once '../../includes/cashier_header.php';
                             <td class="p-5">
                                 <div class="font-bold text-slate-900 text-base"><?php echo htmlspecialchars($order['full_name'] ?: $order['username']); ?></div>
                                 <div class="text-xs text-slate-500">@<?php echo htmlspecialchars($order['username']); ?></div>
-                                <?php if (!empty($order['mobile'])): ?>
+                                <?php if ($has_mobile): ?>
                                     <div class="text-xs text-blue-600 font-semibold mt-0.5">📞 <?php echo htmlspecialchars($order['mobile']); ?></div>
+                                <?php else: ?>
+                                    <div class="text-xs text-gray-400 italic mt-0.5">No mobile number</div>
                                 <?php endif; ?>
                             </td>
 
@@ -240,7 +311,6 @@ require_once '../../includes/cashier_header.php';
                                         <div class="font-black text-green-700 text-lg leading-none">PAID</div>
                                     </div>
                                 <?php endif; ?>
-                                <!-- ✅ Fixed: uses $pm_display with Card fallback -->
                                 <div class="text-[10px] text-slate-400 mt-1 uppercase"><?php echo strtoupper($pm_display); ?></div>
                             </td>
 
@@ -253,6 +323,29 @@ require_once '../../includes/cashier_header.php';
                                 </button>
                             </td>
 
+                            <!-- ===== SMS NOTIFY BUTTON ===== -->
+                            <td class="p-5 text-center">
+                                <?php if ($has_mobile): ?>
+                                    <form action="send_sms_reminder.php" method="POST">
+                                        <input type="hidden" name="order_id"        value="<?php echo $order['order_id']; ?>">
+                                        <input type="hidden" name="mobile"          value="<?php echo htmlspecialchars($order['mobile']); ?>">
+                                        <input type="hidden" name="customer_name"   value="<?php echo htmlspecialchars($order['full_name'] ?: $order['username']); ?>">
+                                        <input type="hidden" name="tracking_no"     value="<?php echo htmlspecialchars($order['tracking_no']); ?>">
+                                        <input type="hidden" name="pickup_datetime" value="<?php echo htmlspecialchars($order['pickup_datetime']); ?>">
+                                        <input type="hidden" name="balance_due"     value="<?php echo $order['balance_due']; ?>">
+                                        <button type="submit"
+                                            title="Send SMS reminder to customer"
+                                            class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg text-sm transition flex items-center gap-1.5 mx-auto shadow-sm border-b-2 border-green-700 active:border-b-0 active:translate-y-0.5">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+                                            Notify
+                                        </button>
+                                    </form>
+                                <?php else: ?>
+                                    <span class="text-xs text-gray-300 italic">No number</span>
+                                <?php endif; ?>
+                            </td>
+
+                            <!-- Process Button -->
                             <td class="p-5 text-right">
                                 <form action="../../core/cashier/claim_order.php" method="POST">
                                     <input type="hidden" name="order_id" value="<?php echo $order['order_id']; ?>">
@@ -277,7 +370,6 @@ require_once '../../includes/cashier_header.php';
                                 pickup: <?php echo json_encode(date('F j, Y \a\t h:i A', $pickup_ts)); ?>,
                                 total: <?php echo json_encode('₱' . number_format($order['total_amount'], 2)); ?>,
                                 balance: <?php echo json_encode($order['balance_due'] > 0 ? '₱' . number_format($order['balance_due'], 2) : 'Fully Paid'); ?>,
-                                // ✅ Fixed: uses $pm_display with Card fallback
                                 payment_method: <?php echo json_encode(strtoupper($pm_display)); ?>,
                                 items: <?php echo json_encode(array_map(function($i) {
                                     return [
@@ -304,7 +396,7 @@ require_once '../../includes/cashier_header.php';
                     <?php endwhile; ?>
                 <?php else: ?>
                     <tr>
-                        <td colspan="6" class="p-16 text-center text-gray-500">
+                        <td colspan="7" class="p-16 text-center text-gray-500">
                             <svg class="w-20 h-20 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
                             <p class="text-2xl font-bold text-gray-700 mb-2"><?php echo ($search || $date_filter) ? 'No orders match your search.' : 'Queue is empty'; ?></p>
                             <p class="text-sm"><?php echo ($search || $date_filter) ? 'Try adjusting your filters.' : 'There are no pending orders. Great job keeping the line clear!'; ?></p>
@@ -323,7 +415,6 @@ require_once '../../includes/cashier_header.php';
     <div class="fixed inset-0 z-10 overflow-y-auto flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl">
 
-            <!-- Modal Header -->
             <div class="bg-slate-900 rounded-t-2xl px-6 py-4 flex justify-between items-center">
                 <div>
                     <h2 class="text-white font-black text-lg" id="modal_tracking">—</h2>
@@ -336,7 +427,6 @@ require_once '../../includes/cashier_header.php';
 
             <div class="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
 
-                <!-- Customer Info Panel -->
                 <div class="bg-blue-50 border border-blue-100 rounded-xl p-4">
                     <p class="text-xs font-bold text-blue-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
@@ -373,7 +463,6 @@ require_once '../../includes/cashier_header.php';
                     </div>
                 </div>
 
-                <!-- Items List -->
                 <div>
                     <p class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
@@ -395,7 +484,6 @@ require_once '../../includes/cashier_header.php';
                     </div>
                 </div>
 
-                <!-- Order History -->
                 <div>
                     <p class="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -432,7 +520,6 @@ function openDetailsModal(orderId) {
     balEl.textContent = d.balance;
     balEl.className = 'font-black text-lg ' + (d.balance === 'Fully Paid' ? 'text-green-600' : 'text-red-600');
 
-    // Items
     const tbody = document.getElementById('modal_items_body');
     tbody.innerHTML = d.items.map(item => `
         <tr class="hover:bg-gray-50">
@@ -443,7 +530,6 @@ function openDetailsModal(orderId) {
         </tr>
     `).join('');
 
-    // History
     const histDiv = document.getElementById('modal_history');
     if (d.history.length === 0) {
         histDiv.innerHTML = '<p class="text-gray-400 text-xs italic">No previous orders from this customer.</p>';

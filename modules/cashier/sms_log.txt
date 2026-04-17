@@ -1,0 +1,5 @@
+2026-04-17 15:36:24 | TO: 639923139504 | REF: ORD-20260417-0A84 | RESPONSE: {"messages":[{"status":1,"err_msg":"Authorization failed"}]} | CURL_ERR: 
+2026-04-17 15:39:54 | TO: 639923139504 | REF: ORD-20260417-0A84 | RESPONSE: {"messages":[{"status":1,"err_msg":"Authorization failed"}]} | CURL_ERR: 
+2026-04-17 15:43:59 | HTTP: 401 | TO: 639923139504 | REF: ORD-20260417-0A84 | RESPONSE: {"messages":[{"status":20,"err_msg":"Missing mandatory parameters"}]} | CURL_ERR: 
+2026-04-17 15:46:13 | HTTP: 401 | TO: 639923139504 | REF: ORD-20260417-0A84 | RESPONSE: {"messages":[{"status":1,"err_msg":"Authorization failed"}]} | CURL_ERR: 
+2026-04-17 15:49:17 | HTTP: 202 | TO: 639923139504 | REF: ORD-20260417-0A84 | RESPONSE: {"messages":[{"status":0,"receiver":"639923139504","total_segments":2,"segment_no":1,"msgid":"SumiCinna0417214918157461.0005"},{"status":0,"receiver":"639923139504","total_segments":2,"segment_no":2,"msgid":"SumiCinna0417214918157462.0005"}]} | CURL_ERR: 

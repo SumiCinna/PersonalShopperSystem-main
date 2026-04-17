@@ -45,6 +45,10 @@ if ($action === 'create_po') {
     $expectedDelivery = trim($_POST['expected_delivery'] ?? '');
     $notes = trim($_POST['notes'] ?? '');
 
+    if (strlen($notes) > 100) {
+        redirect_with_message('../../modules/inventory/purchase_orders.php', 'PO Notes cannot exceed 100 characters.', 'error');
+    }
+
     if ($expectedDelivery !== '') {
         try {
             $today = new DateTime('now', new DateTimeZone('Asia/Manila'));
@@ -300,12 +304,32 @@ if ($action === 'receive_items') {
             $updatePoItem->execute();
 
             if ($accepted > 0) {
+                // Get old stock explicitly before updating for audit logging
+                $oldStockStmt = $conn->prepare("SELECT stock FROM products WHERE product_id = ?");
+                $oldStockStmt->bind_param('i', $productId);
+                $oldStockStmt->execute();
+                $oldStockResult = $oldStockStmt->get_result()->fetch_assoc();
+                $oldStock = (int)($oldStockResult['stock'] ?? 0);
+                $oldStockStmt->close();
+
                 $updateStock->bind_param('ii', $accepted, $productId);
                 $updateStock->execute();
 
                 $invRemarks = 'PO ' . $po['po_number'] . ' receiving accepted quantity';
                 $insertInvLog->bind_param('iiis', $productId, $userId, $accepted, $invRemarks);
                 $insertInvLog->execute();
+                
+                // Automatically log to Inventory Audit Trial (activity_logs)
+                $newStock = $oldStock + $accepted;
+                $auditAction = 'update';
+                $auditField = 'stock';
+                $productName = $item['name'];
+                $insertAuditLog = $conn->prepare("INSERT INTO activity_logs (user_id, action, product_id, product_name, field_changed, old_value, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+                $oldStockStr = (string)$oldStock;
+                $newStockStr = (string)$newStock;
+                $insertAuditLog->bind_param('isissss', $userId, $auditAction, $productId, $productName, $auditField, $oldStockStr, $newStockStr);
+                $insertAuditLog->execute();
+                $insertAuditLog->close();
             }
 
             if ($rejected > 0) {

@@ -92,7 +92,8 @@ require_once '../../includes/inventory_header.php';
                         <th class="px-4 py-3 text-left">PO / Item</th>
                         <th class="px-4 py-3 text-left">Supplier</th>
                         <th class="px-4 py-3 text-center">Rejected Qty</th>
-                        <th class="px-4 py-3 text-left">Reason</th>
+                        <th class="px-4 py-3 text-left">Reason / Notes</th>
+                        <th class="px-4 py-3 text-left">Checked By</th>
                         <th class="px-4 py-3 text-left">Status</th>
                         <th class="px-4 py-3 text-left">Update</th>
                     </tr>
@@ -100,7 +101,7 @@ require_once '../../includes/inventory_header.php';
                 <tbody class="divide-y divide-slate-100">
                     <?php if (count($returns) === 0): ?>
                         <tr>
-                            <td colspan="6" class="px-4 py-8 text-center text-slate-500">No rejected supplier items yet.</td>
+                            <td colspan="7" class="px-4 py-8 text-center text-slate-500">No rejected supplier items yet.</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($returns as $row): ?>
@@ -108,13 +109,20 @@ require_once '../../includes/inventory_header.php';
                                 <td class="px-4 py-3">
                                     <div class="font-semibold text-slate-800"><?php echo htmlspecialchars($row['po_number']); ?></div>
                                     <div class="text-xs text-slate-500"><?php echo htmlspecialchars($row['product_name']); ?> (<?php echo htmlspecialchars($row['sku']); ?>)</div>
-                                    <div class="text-xs text-slate-400 mt-1">Logged: <?php echo htmlspecialchars($row['created_at']); ?></div>
+                                    <div class="text-xs text-slate-400 mt-1">Logged: <?php echo date('M d, Y h:i A', strtotime($row['created_at'])); ?></div>
                                 </td>
-                                <td class="px-4 py-3 text-slate-700"><?php echo htmlspecialchars($row['supplier_name']); ?></td>
-                                <td class="px-4 py-3 text-center font-bold text-red-700"><?php echo (int)$row['rejected_qty']; ?></td>
-                                <td class="px-4 py-3 text-slate-700">
-                                    <span class="text-xs uppercase font-semibold"><?php echo htmlspecialchars(str_replace('_', ' ', $row['reason'])); ?></span>
-                                    <?php if (!empty($row['reason_notes'])): ?><div class="text-xs text-slate-500 mt-1"><?php echo htmlspecialchars($row['reason_notes']); ?></div><?php endif; ?>
+                                <td class="px-4 py-3 text-slate-700 font-medium"><?php echo htmlspecialchars($row['supplier_name']); ?></td>
+                                <td class="px-4 py-3 text-center text-lg font-black text-red-600"><?php echo (int)$row['rejected_qty']; ?></td>
+                                <td class="px-4 py-3">
+                                    <span class="text-xs font-bold text-red-700 uppercase bg-red-50 border border-red-100 px-2 py-0.5 rounded"><?php echo htmlspecialchars(str_replace('_', ' ', $row['reason'])); ?></span>
+                                    <?php if (!empty($row['reason_notes']) && $row['reason_notes'] !== $row['reason']): ?>
+                                        <div class="text-[11px] text-slate-500 mt-1.5 italic bg-slate-50 p-1.5 rounded border border-slate-100 border-l-2 border-l-slate-300">"<?php echo htmlspecialchars($row['reason_notes']); ?>"</div>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="text-xs font-semibold text-slate-700"><?php echo htmlspecialchars($row['created_by_name'] ?? 'Unknown'); ?></span>
+                                    </div>
                                 </td>
                                 <td class="px-4 py-3">
                                     <span class="inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold uppercase <?php echo return_badge($row['status']); ?>">

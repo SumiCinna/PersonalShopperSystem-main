@@ -84,7 +84,7 @@ if ($payment_intent_id) {
         $stmt = $conn->prepare("
             UPDATE orders
             SET payment_status   = 'paid',
-                order_status     = 'processing',
+                order_status     = 'pending',
                 payment_method   = ?
             WHERE order_id = ? AND user_id = ?
         ");
