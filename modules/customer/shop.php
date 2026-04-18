@@ -140,6 +140,23 @@ require_once '../../includes/customer_header.php';
                             <?php 
                                 $is_favorited = in_array($product['product_id'], $user_wishlist);
                                 $cart_qty = $user_cart[$product['product_id']] ?? 1;
+
+                                // Fetch active batches for FEFO display
+                                $p_id = (int)$product['product_id'];
+                                $batchQuery = "SELECT batch_number, manufacture_date, expiry_date, remaining_quantity 
+                                              FROM product_batches 
+                                              WHERE product_id = $p_id
+                                              AND status = 'Released' 
+                                              AND remaining_quantity > 0 
+                                              ORDER BY expiry_date ASC";
+                                $batchRes = $conn->query($batchQuery);
+                                $batches = [];
+                                if ($batchRes) {
+                                    while($bRow = $batchRes->fetch_assoc()) {
+                                        $batches[] = $bRow;
+                                    }
+                                }
+                                $product['batches'] = $batches;
                             ?>
                             <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col hover:shadow-xl transition-shadow duration-300 relative group">
                                 
@@ -222,22 +239,24 @@ require_once '../../includes/customer_header.php';
 
 <!-- Product Details Modal -->
 <div id="product-modal" tabindex="-1" aria-hidden="true" class="fixed inset-0 z-[60] hidden w-full p-4 overflow-x-hidden overflow-y-auto bg-gray-900/50 backdrop-blur-sm flex justify-center items-center opacity-0 transition-opacity duration-300">
-    <div class="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl transform scale-95 transition-transform duration-300" id="product-modal-content">
+    <div class="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl transform scale-95 transition-transform duration-300" id="product-modal-content">
         
         <!-- Modal header -->
-        <button type="button" onclick="closeProductModal()" class="absolute top-4 right-4 text-gray-400 bg-transparent hover:bg-gray-100 hover:text-gray-900 rounded-lg text-sm p-1.5 ml-auto inline-flex items-center transition">
+        <button type="button" onclick="closeProductModal()" class="absolute top-4 right-4 text-gray-400 bg-transparent hover:bg-gray-100 hover:text-gray-900 rounded-lg text-sm p-1.5 ml-auto inline-flex items-center transition z-10">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
         </button>
 
         <!-- Modal body -->
-        <div class="p-6 md:p-8 flex flex-col md:flex-row gap-6">
+        <div class="p-6 md:p-8 flex flex-col lg:flex-row gap-8">
             
-            <div class="w-full md:w-1/2 flex justify-center items-center bg-gray-50 rounded-xl p-4">
-                <img id="modal-product-img" src="" alt="Product Image" class="max-h-64 object-contain mix-blend-multiply">
-                <svg id="modal-product-img-fallback" class="w-24 h-24 text-gray-300 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <!-- Left: Image -->
+            <div class="w-full lg:w-1/3 flex justify-center items-center bg-gray-50 rounded-xl p-4">
+                <img id="modal-product-img" src="" alt="Product Image" class="max-h-72 object-contain mix-blend-multiply">
+                <svg id="modal-product-img-fallback" class="w-32 h-32 text-gray-300 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
             </div>
             
-            <div class="w-full md:w-1/2 flex flex-col justify-center">
+            <!-- Middle: Product Info -->
+            <div class="w-full lg:w-1/3 flex flex-col justify-center border-r border-gray-100 pr-4">
                 <div class="flex items-center gap-2 mb-2">
                     <span id="modal-product-category" class="bg-blue-100 text-blue-800 text-[10px] font-bold px-2.5 py-0.5 rounded uppercase tracking-wider">Category</span>
                     <span id="modal-product-brand" class="text-[11px] text-gray-500 font-semibold tracking-wide">Brand</span>
@@ -255,11 +274,28 @@ require_once '../../includes/customer_header.php';
 
                 <div class="bg-gray-50 rounded-lg p-3 mb-6 border border-gray-100">
                     <h4 class="text-xs font-bold text-gray-800 uppercase tracking-widest mb-1.5">Description</h4>
-                    <p id="modal-product-desc" class="text-sm text-gray-600 leading-relaxed max-h-32 overflow-hidden overflow-y-auto pr-2">No description available.</p>
+                    <p id="modal-product-desc" class="text-sm text-gray-600 leading-relaxed max-h-40 overflow-hidden overflow-y-auto pr-2">No description available.</p>
                 </div>
                 
                 <div class="mt-auto flex items-center justify-between">
                     <span id="modal-product-stock" class="text-sm font-bold bg-gray-100 px-3 py-1 rounded text-gray-700">0 left in stock</span>
+                </div>
+            </div>
+
+            <!-- Right: Batches -->
+            <div class="w-full lg:w-1/3 flex flex-col">
+                <div id="modal-product-batches-container" class="h-full flex flex-col hidden">
+                    <h4 class="text-xs font-bold text-gray-800 uppercase tracking-widest mb-3 flex items-center gap-1.5 border-b pb-2">
+                        <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Stock Expiration Breakdown
+                    </h4>
+                    <div id="modal-product-batches" class="flex flex-col gap-2 flex-1 overflow-y-auto pr-1">
+                        <!-- Batches injected here via JS -->
+                    </div>
+                </div>
+                <div id="modal-product-no-batches" class="hidden h-full flex flex-col items-center justify-center text-center p-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                     <svg class="w-12 h-12 text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                     <p class="text-sm font-semibold text-gray-500">No active batches</p>
                 </div>
             </div>
 
@@ -470,6 +506,35 @@ function openProductModal(product) {
     } else {
         stockEl.textContent = 'Out of Stock';
         stockEl.className = 'text-sm font-black bg-red-100 text-red-700 px-3 py-1 rounded';
+    }
+
+    // Batches Info
+    const batchesContainer = document.getElementById('modal-product-batches-container');
+    const noBatchesContainer = document.getElementById('modal-product-no-batches');
+    const batchesContent = document.getElementById('modal-product-batches');
+    batchesContent.innerHTML = ''; // Clear previous content
+
+    if (product.batches && product.batches.length > 0) {
+        batchesContainer.classList.remove('hidden');
+        noBatchesContainer.classList.add('hidden');
+        product.batches.forEach((batch, index) => {
+            const batchEl = document.createElement('div');
+            batchEl.className = 'flex justify-between items-center bg-white rounded-lg shadow-sm p-3 border';
+            batchEl.innerHTML = `
+                <div class="flex-1">
+                    <p class="text-sm text-gray-700 font-bold mb-0.5">Batch #${index + 1}</p>
+                    <p class="text-[11px] text-gray-500 font-semibold uppercase tracking-wider">Manufacture Date: ${new Date(batch.manufacture_date).toLocaleDateString()}</p>
+                    <p class="text-[11px] text-gray-500 font-semibold uppercase tracking-wider">Expiration Date: <span class="text-red-600">${new Date(batch.expiry_date).toLocaleDateString()}</span></p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm font-black ${batch.remaining_quantity <= 10 ? 'text-orange-600' : 'text-green-600'}">${batch.remaining_quantity} <span class="text-xs font-semibold text-gray-400">pcs</span></p>
+                </div>
+            `;
+            batchesContent.appendChild(batchEl);
+        });
+    } else {
+        batchesContainer.classList.add('hidden');
+        noBatchesContainer.classList.remove('hidden');
     }
 
     // Open Modal

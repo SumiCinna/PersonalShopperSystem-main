@@ -259,12 +259,13 @@ require_once '../../includes/inventory_header.php';
                                         
                                         <?php if ($item['category'] !== 'Fresh Produce'): ?>
                                             <div>
-                                                <label class="block text-[9px] uppercase text-emerald-800 font-semibold mb-1">Manufacture Date</label>
-                                                <input type="date" name="mfg_date[]" class="w-full rounded border border-emerald-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:ring-emerald-500 focus:border-emerald-500">
+                                                <label class="block text-[9px] uppercase text-emerald-800 font-semibold mb-1">Manufacture Date <span class="text-red-500 font-bold">*</span></label>
+                                                <input type="date" name="mfg_date[]" class="w-full rounded border border-emerald-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:ring-emerald-500 focus:border-emerald-500" <?php echo $pending > 0 ? 'required' : ''; ?>>
                                             </div>
-                                            <div>
-                                                <label class="block text-[9px] uppercase text-emerald-800 font-semibold mb-1">Expiry Date</label>
-                                                <input type="date" name="expiry_date[]" class="w-full rounded border border-emerald-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:ring-emerald-500 focus:border-emerald-500">
+                                            <div class="relative">
+                                                <label class="block text-[9px] uppercase text-emerald-800 font-semibold mb-1">Expiry Date <span class="text-red-500 font-bold">*</span></label>
+                                                <input type="date" name="expiry_date[]" class="w-full rounded border border-emerald-300 bg-white px-2 py-1.5 text-xs text-slate-700 focus:ring-emerald-500 focus:border-emerald-500" <?php echo $pending > 0 ? 'required' : ''; ?>>
+                                                <div class="date-validation-message hidden text-[10px] font-bold mt-1 absolute -bottom-4 left-0 right-0 leading-tight"></div>
                                             </div>
                                         <?php else: ?>
                                             <input type="hidden" name="mfg_date[]" value="">
@@ -371,6 +372,9 @@ document.querySelectorAll('.space-y-4 > div').forEach(container => {
     const delivered = container.querySelector('.delivered-input');
     const accepted = container.querySelector('.accepted-input');
     const rejected = container.querySelector('.rejected-input');
+    const mfgInput = container.querySelector('input[name="mfg_date[]"]');
+    const expInput = container.querySelector('input[name="expiry_date[]"]');
+    const rejectSelect = container.querySelector('select[name="reject_reason[]"]');
 
     if (delivered && accepted && rejected) {
         function syncValues() {
@@ -399,23 +403,41 @@ document.querySelectorAll('.space-y-4 > div').forEach(container => {
             } else {
                 delivered.classList.remove('text-red-600');
             }
+            
+            // Toggle required attribute dynamically based on accepted qty
+            if (mfgInput && expInput && mfgInput.type !== 'hidden') {
+                if (a > 0) {
+                    mfgInput.required = true;
+                    expInput.required = true;
+                } else {
+                    mfgInput.required = false;
+                    expInput.required = false;
+                }
+            }
         }
 
         delivered.addEventListener('input', syncValues);
         rejected.addEventListener('input', syncValues);
+        
+        // Setup initial UI states correctly on load
+        syncValues();
     }
 
     // Live Date Validation for Manufacture Date and Expiry Date
-    const mfgInput = container.querySelector('input[name="mfg_date[]"]');
-    const expInput = container.querySelector('input[name="expiry_date[]"]');
-    const rejectSelect = container.querySelector('select[name="reject_reason[]"]');
-
     if (mfgInput && expInput) {
+        const valMsg = expInput.parentElement.querySelector('.date-validation-message');
+
         function validateDates() {
             if (!mfgInput.value) return;
 
             // Ensure expiry date calendar physically cannot go before mfg date
             expInput.min = mfgInput.value;
+
+            if (valMsg) {
+                valMsg.classList.add('hidden');
+                valMsg.textContent = '';
+                expInput.classList.remove('border-red-500', 'border-amber-500', 'text-red-700', 'text-amber-700', 'bg-red-50', 'bg-amber-50');
+            }
 
             if (expInput.value) {
                 const mfgDate = new Date(mfgInput.value);
@@ -423,7 +445,11 @@ document.querySelectorAll('.space-y-4 > div').forEach(container => {
 
                 // Validation 1: Expiry before Manufacture Date
                 if (expDate < mfgDate) {
-                    alert('Error: Expiry Date cannot be before the Manufacture Date.');
+                    if (valMsg) {
+                        valMsg.textContent = 'Expiry cannot be before Mfg Date.';
+                        valMsg.className = 'date-validation-message text-[10px] font-bold mt-1 text-red-600 leading-tight';
+                        expInput.classList.add('border-red-500', 'text-red-700', 'bg-red-50');
+                    }
                     expInput.value = '';
                     return;
                 }
@@ -433,7 +459,11 @@ document.querySelectorAll('.space-y-4 > div').forEach(container => {
                 oneMonthLater.setMonth(oneMonthLater.getMonth() + 1);
 
                 if (expDate < oneMonthLater) {
-                    alert('Warning: Expiry is less than 1 month from Manufacture Date. The item is nearing expiration.');
+                    if (valMsg) {
+                        valMsg.textContent = 'Nearing expiration (< 1 month).';
+                        valMsg.className = 'date-validation-message text-[10px] font-bold mt-1 text-amber-600 leading-tight';
+                        expInput.classList.add('border-amber-500', 'text-amber-700', 'bg-amber-50');
+                    }
                     if (rejectSelect) {
                         rejectSelect.value = 'near_expiry';
                     }

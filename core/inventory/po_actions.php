@@ -265,6 +265,10 @@ if ($action === 'receive_items') {
 
         $updateStock = $conn->prepare('UPDATE products SET stock = stock + ? WHERE product_id = ?');
         $insertInvLog = $conn->prepare('INSERT INTO inventory_logs (product_id, user_id, quantity_added, remarks) VALUES (?, ?, ?, ?)');
+        $insertBatch = $conn->prepare(
+            'INSERT INTO product_batches (product_id, po_id, batch_number, manufacture_date, expiry_date, initial_quantity, remaining_quantity, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, "Pending")'
+        );
         $insertReturn = $conn->prepare(
             'INSERT INTO supplier_returns (po_id, po_item_id, product_id, supplier_id, rejected_qty, reason, reason_notes, status, created_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, "pending_return", ?)'
@@ -330,32 +334,25 @@ if ($action === 'receive_items') {
             $updatePoItem->execute();
 
             if ($accepted > 0) {
-                // Get old stock explicitly before updating for audit logging
-                $oldStockStmt = $conn->prepare("SELECT stock FROM products WHERE product_id = ?");
-                $oldStockStmt->bind_param('i', $productId);
-                $oldStockStmt->execute();
-                $oldStockResult = $oldStockStmt->get_result()->fetch_assoc();
-                $oldStock = (int)($oldStockResult['stock'] ?? 0);
-                $oldStockStmt->close();
+                // Determine expiry date for FEFO (default to far future if null, though it shouldn't be null for expiry tracked items)
+                $batchExpiry = $expiryValue !== null ? $expiryValue : date('Y-m-d', strtotime('+5 years'));
 
-                $updateStock->bind_param('ii', $accepted, $productId);
-                $updateStock->execute();
+                // Insert into product_batches as Pending
+                $insertBatch->bind_param(
+                    'iisssii',
+                    $productId,
+                    $poId,
+                    $batch,
+                    $mfgValue,
+                    $batchExpiry,
+                    $accepted,
+                    $accepted
+                );
+                $insertBatch->execute();
 
-                $invRemarks = 'PO ' . $po['po_number'] . ' receiving accepted quantity';
-                $insertInvLog->bind_param('iiis', $productId, $userId, $accepted, $invRemarks);
-                $insertInvLog->execute();
-                
-                // Automatically log to Inventory Audit Trial (activity_logs)
-                $newStock = $oldStock + $accepted;
-                $auditAction = 'update';
-                $auditField = 'stock';
-                $productName = $item['name'];
-                $insertAuditLog = $conn->prepare("INSERT INTO activity_logs (user_id, action, product_id, product_name, field_changed, old_value, new_value, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
-                $oldStockStr = (string)$oldStock;
-                $newStockStr = (string)$newStock;
-                $insertAuditLog->bind_param('isissss', $userId, $auditAction, $productId, $productName, $auditField, $oldStockStr, $newStockStr);
-                $insertAuditLog->execute();
-                $insertAuditLog->close();
+                // ─── NOTE: We ONLY insert to product_batches here. ────────
+                // We DO NOT update `products.stock` yet! 
+                // Stock is updated when the batch is 'Released' via the new Stock Management module.
             }
 
             if ($rejected > 0) {
@@ -381,6 +378,7 @@ if ($action === 'receive_items') {
         $updatePoItem->close();
         $updateStock->close();
         $insertInvLog->close();
+        $insertBatch->close();
         $insertReturn->close();
 
         if (!$processedAtLeastOne) {

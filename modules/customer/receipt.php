@@ -47,10 +47,10 @@ foreach ($order_items as $item) {
 $derived_vat         = round($derived_subtotal * 0.12, 2);
 $derived_service_fee = round($derived_subtotal * 0.10, 2);
 
-// ── Payment method display (fallback to Card) ─────────────────────────────────
+// ── Payment method display (fallback to QRPh) ─────────────────────────────────
 $payment_method_display = $order['payment_method'];
 if (!$payment_method_display || strtolower(trim($payment_method_display)) === 'unpaid' || trim($payment_method_display) === '') {
-    $payment_method_display = 'Card';
+    $payment_method_display = 'QRPh';
 }
 
 // ── Derived values ─────────────────────────────────────────────────────────────
