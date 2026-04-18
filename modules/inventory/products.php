@@ -10,9 +10,26 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'inventory') {
     exit();
 }
 
+// --- AUTOMATIC STOCK CHECK ---
+// Automatically set products to inactive if their stock drops to 0 or below
+$conn->query("UPDATE products SET status = 'inactive' WHERE stock <= 0 AND status = 'active'");
+
 // Fetch all products from the database
 $query = "SELECT product_id, name, brand, category, sku, cost_price, price, discount_price, stock, low_stock_threshold, status, description, image_url, unit_value, unit_measure FROM products ORDER BY product_id DESC";
 $result = $conn->query($query);
+
+// Fetch active batches for these products
+$batches_array = [];
+$batches_res = $conn->query("SELECT product_id, batch_number, manufacture_date, expiry_date, remaining_quantity FROM product_batches WHERE status = 'Released' AND remaining_quantity > 0 ORDER BY expiry_date ASC");
+if ($batches_res) {
+    while ($brow = $batches_res->fetch_assoc()) {
+        $b_pid = $brow['product_id'];
+        if (!isset($batches_array[$b_pid])) {
+            $batches_array[$b_pid] = [];
+        }
+        $batches_array[$b_pid][] = $brow;
+    }
+}
 
 // 1. Include the global header (HTML head, Tailwind CSS)
 $page_title = 'Manage Products - Inventory Management';
@@ -31,6 +48,15 @@ require_once '../../includes/inventory_header.php';
             <div class="relative">
                 <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="Search products..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-sm">
                 <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            </div>
+
+            <div>
+                <select id="statusFilter" onchange="filterTable()" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition text-sm bg-white">
+                    <option value="">All Statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="archived">Archived</option>
+                </select>
             </div>
 
             <div>
@@ -73,7 +99,7 @@ require_once '../../includes/inventory_header.php';
                         <tbody class="divide-y divide-gray-200">
                             <?php if ($result->num_rows > 0): ?>
                                 <?php while ($row = $result->fetch_assoc()): ?>
-                                    <tr class="hover:bg-blue-50 transition border-b border-gray-100 last:border-0" data-category="<?php echo htmlspecialchars($row['category']); ?>">
+                                    <tr class="hover:bg-blue-50 transition border-b border-gray-100 last:border-0 <?php echo $row['status'] === 'archived' ? 'opacity-50' : ''; ?>" data-category="<?php echo htmlspecialchars($row['category']); ?>" data-status="<?php echo htmlspecialchars($row['status']); ?>">
                                         <td class="p-4 text-sm font-mono text-gray-500"><?php echo htmlspecialchars($row['sku']); ?></td>
                                         <td class="p-4">
                                             <div class="font-bold text-gray-800"><?php echo htmlspecialchars($row['name']); ?></div>
@@ -109,6 +135,10 @@ require_once '../../includes/inventory_header.php';
                                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                                                     <span class="w-2 h-2 bg-green-500 rounded-full mr-1.5"></span> Active
                                                 </span>
+                                            <?php elseif ($row['status'] === 'archived'): ?>
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                                    <span class="w-2 h-2 bg-red-500 rounded-full mr-1.5"></span> Archived
+                                                </span>
                                             <?php else: ?>
                                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
                                                     <span class="w-2 h-2 bg-gray-500 rounded-full mr-1.5"></span> Inactive
@@ -116,15 +146,29 @@ require_once '../../includes/inventory_header.php';
                                             <?php endif; ?>
                                         </td>
                                         <td class="p-4 text-center flex justify-center space-x-3">
-                                            <button onclick='openPreviewModal(<?php echo json_encode($row); ?>)' class="text-gray-400 hover:text-green-600 transition" title="Preview">
+                                            <?php 
+                                            // Append batches to JSON payload
+                                            $row['batches'] = isset($batches_array[$row['product_id']]) ? $batches_array[$row['product_id']] : [];
+                                            ?>
+                                            <button onclick='openPreviewModal(<?php echo htmlspecialchars(json_encode($row), ENT_QUOTES, "UTF-8"); ?>)' class="text-gray-400 hover:text-green-600 transition" title="Preview">
                                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                                             </button>
                                             <a href="edit_product.php?id=<?php echo $row['product_id']; ?>" class="text-gray-400 hover:text-blue-600 transition" title="Edit">
                                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                             </a>
-                                            <button onclick="openDeleteModal(<?php echo $row['product_id']; ?>)" class="text-gray-400 hover:text-red-600 transition" title="Delete">
-                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                            </button>
+                                            <?php if ($row['status'] === 'archived'): ?>
+                                                <button onclick="openRecoverModal(<?php echo $row['product_id']; ?>)" class="text-gray-400 hover:text-blue-600 transition" title="Recover">
+                                                    <!-- Refresh/Recover Icon -->
+                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                                </button>
+                                            <?php else: ?>
+                                                <button onclick="openInactiveModal(<?php echo $row['product_id']; ?>)" class="text-gray-400 hover:text-orange-600 transition" title="Set Inactive">
+                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                                                </button>
+                                                <button onclick="openArchiveModal(<?php echo $row['product_id']; ?>)" class="text-gray-400 hover:text-red-600 transition" title="Archive">
+                                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
+                                                </button>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
                                 <?php endwhile; ?>
@@ -216,6 +260,14 @@ require_once '../../includes/inventory_header.php';
                                 </div>
                             </div>
 
+                            <!-- Batches Info -->
+                            <div class="mb-6">
+                                <p class="text-xs text-gray-400 uppercase mb-2">Active Batches</p>
+                                <div id="previewBatches" class="bg-white border border-gray-100 rounded p-3 text-sm text-gray-600 max-h-32 overflow-y-auto">
+                                    -
+                                </div>
+                            </div>
+
                             <!-- Description -->
                             <div class="mt-auto">
                                 <p class="text-xs text-gray-400 uppercase mb-1">Description</p>
@@ -236,8 +288,42 @@ require_once '../../includes/inventory_header.php';
     </div>
 </div>
 
-<!-- Delete Confirmation Modal -->
-<div id="deleteConfirmationModal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+<!-- Inactive Confirmation Modal -->
+<div id="inactiveConfirmationModal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity backdrop-blur-sm"></div>
+    <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div class="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
+                <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 sm:mx-0 sm:h-10 sm:w-10">
+                            <!-- Warning Icon -->
+                            <svg class="h-6 w-6 text-orange-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                        </div>
+                        <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+                            <h3 class="text-base font-semibold leading-6 text-gray-900" id="modal-title">Set Product to Inactive</h3>
+                            <div class="mt-2">
+                                <p class="text-sm text-gray-500">Are you sure you want to set this product to inactive? It will not be shown to customers.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                    <button type="button" onclick="confirmInactive()" class="inline-flex w-full justify-center rounded-md bg-orange-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500 sm:ml-3 sm:w-auto">Set Inactive</button>
+                    <button type="button" onclick="closeInactiveModal()" class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-3"></div>
+
+<!-- Archive Confirmation Modal -->
+<div id="archiveConfirmationModal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
     <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity backdrop-blur-sm"></div>
     <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
         <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
@@ -245,21 +331,53 @@ require_once '../../includes/inventory_header.php';
                 <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
                     <div class="sm:flex sm:items-start">
                         <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10">
-                            <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                            <!-- Archive Icon -->
+                            <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
                             </svg>
                         </div>
                         <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
-                            <h3 class="text-base font-semibold leading-6 text-gray-900" id="modal-title">Delete Product</h3>
+                            <h3 class="text-base font-semibold leading-6 text-gray-900" id="modal-title">Archive Product</h3>
                             <div class="mt-2">
-                                <p class="text-sm text-gray-500">Are you sure you want to delete this product? This action cannot be undone.</p>
+                                <p class="text-sm text-gray-500">Are you sure you want to archive this product? It will be visually blurred out and hidden from most active operations.</p>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
-                    <button type="button" onclick="confirmDelete()" class="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto">Delete</button>
-                    <button type="button" onclick="closeDeleteModal()" class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto">Cancel</button>
+                    <button type="button" onclick="confirmArchive()" class="inline-flex w-full justify-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 sm:ml-3 sm:w-auto">Archive</button>
+                    <button type="button" onclick="closeArchiveModal()" class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recover Confirmation Modal -->
+<div id="recoverConfirmationModal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity backdrop-blur-sm"></div>
+    <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div class="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg">
+                <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+                            <!-- Recover Icon -->
+                            <svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                        </div>
+                        <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+                            <h3 class="text-base font-semibold leading-6 text-gray-900" id="modal-title">Recover Product</h3>
+                            <div class="mt-2">
+                                <p class="text-sm text-gray-500">Are you sure you want to recover this product? It will be removed from the archive and set to inactive for review.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
+                    <button type="button" onclick="confirmRecover()" class="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 sm:ml-3 sm:w-auto">Recover</button>
+                    <button type="button" onclick="closeRecoverModal()" class="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto">Cancel</button>
                 </div>
             </div>
         </div>
@@ -267,7 +385,36 @@ require_once '../../includes/inventory_header.php';
 </div>
 
 <script>
-    let productToDeleteId = null;
+    let productToInactiveId = null;
+    let productToArchiveId = null;
+    let productToRecoverId = null;
+
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `flex items-center p-4 w-full max-w-sm rounded-lg shadow text-white transition-opacity duration-300 opacity-0 transform translate-y-4 ${
+            type === 'success' ? 'bg-green-600' : 'bg-red-600'
+        }`;
+        toast.innerHTML = `
+            <div class="ml-3 text-sm font-normal">${message}</div>
+            <button type="button" class="ml-auto -mx-1.5 -my-1.5 inline-flex h-8 w-8 rounded-lg p-1.5 hover:bg-white hover:bg-opacity-20 focus:ring-2 focus:ring-white transition" onclick="this.parentElement.remove()">
+                <span class="sr-only">Close</span>
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        `;
+        container.appendChild(toast);
+        // trigger animation
+        setTimeout(() => {
+            toast.classList.remove('opacity-0', 'translate-y-4');
+        }, 10);
+        
+        setTimeout(() => {
+            toast.classList.add('opacity-0', 'translate-y-4');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
 
     function openPreviewModal(product) {
         // Populate Text Fields
@@ -293,9 +440,35 @@ require_once '../../includes/inventory_header.php';
         if (product.status === 'active') {
             statusEl.className = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800';
             statusEl.textContent = 'Active';
+        } else if (product.status === 'archived') {
+            statusEl.className = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800';
+            statusEl.textContent = 'Archived';
         } else {
             statusEl.className = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800';
             statusEl.textContent = 'Inactive';
+        }
+
+        // Handle Batches Output
+        const batchesEl = document.getElementById('previewBatches');
+        if (product.batches && product.batches.length > 0) {
+            let html = '<div class="space-y-2">';
+            product.batches.forEach(b => {
+                html += `
+                <div class="flex justify-between bg-slate-50 p-2 rounded border border-slate-100">
+                    <div class="flex flex-col">
+                        <span class="font-semibold text-slate-800">Batch: ${b.batch_number || 'N/A'}</span>
+                        <span class="text-xs text-slate-500">Qty: ${b.remaining_quantity}</span>
+                    </div>
+                    <div class="flex flex-col text-right">
+                        <span class="text-xs text-slate-600">MFG: ${b.manufacture_date || 'N/A'}</span>
+                        <span class="text-xs ${b.expiry_date ? 'text-red-500 font-medium' : 'text-slate-600'}">EXP: ${b.expiry_date || 'N/A'}</span>
+                    </div>
+                </div>`;
+            });
+            html += '</div>';
+            batchesEl.innerHTML = html;
+        } else {
+            batchesEl.innerHTML = 'No active batches available.';
         }
 
         // Handle Image
@@ -319,39 +492,105 @@ require_once '../../includes/inventory_header.php';
         document.getElementById('productPreviewModal').classList.add('hidden');
     }
 
-    function openDeleteModal(productId) {
-        productToDeleteId = productId;
-        document.getElementById('deleteConfirmationModal').classList.remove('hidden');
+    function openInactiveModal(productId) {
+        productToInactiveId = productId;
+        document.getElementById('inactiveConfirmationModal').classList.remove('hidden');
     }
 
-    function closeDeleteModal() {
-        document.getElementById('deleteConfirmationModal').classList.add('hidden');
-        productToDeleteId = null;
+    function closeInactiveModal() {
+        document.getElementById('inactiveConfirmationModal').classList.add('hidden');
+        productToInactiveId = null;
     }
 
-    function confirmDelete() {
-        if (productToDeleteId) {
-            fetch('../../core/inventory/delete_product.php', {
+    function openArchiveModal(productId) {
+        productToArchiveId = productId;
+        document.getElementById('archiveConfirmationModal').classList.remove('hidden');
+    }
+
+    function closeArchiveModal() {
+        document.getElementById('archiveConfirmationModal').classList.add('hidden');
+        productToArchiveId = null;
+    }
+
+    function openRecoverModal(productId) {
+        productToRecoverId = productId;
+        document.getElementById('recoverConfirmationModal').classList.remove('hidden');
+    }
+
+    function closeRecoverModal() {
+        document.getElementById('recoverConfirmationModal').classList.add('hidden');
+        productToRecoverId = null;
+    }
+
+    function confirmArchive() {
+        if (productToArchiveId) {
+            fetch('../../core/inventory/archive_product.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: productToDeleteId })
+                body: JSON.stringify({ id: productToArchiveId })
             })
             .then(response => response.json()) // Read the JSON response from PHP
             .then(data => {
                 if (data.success) {
-                    // Step 3: If successful, alert the user and refresh the page to update the table
-                    alert(data.message);
-                    window.location.reload(); 
+                    showToast("Product archived successfully.", "success");
+                    setTimeout(() => window.location.reload(), 1500);
                 } else {
-                    // If the PHP script returned an error, show it
-                    alert("Error: " + data.message);
+                    showToast("Error: " + data.message, "error");
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert("A network error occurred while trying to delete the product.");
+                showToast("A network error occurred while trying to update the product.", "error");
             });
-            closeDeleteModal();
+            closeArchiveModal();
+        }
+    }
+
+    function confirmRecover() {
+        if (productToRecoverId) {
+            fetch('../../core/inventory/recover_product.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: productToRecoverId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast("Product recovered successfully.", "success");
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    showToast("Error: " + data.message, "error");
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast("A network error occurred while trying to update the product.", "error");
+            });
+            closeRecoverModal();
+        }
+    }
+
+    function confirmInactive() {
+        if (productToInactiveId) {
+            fetch('../../core/inventory/set_product_inactive.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: productToInactiveId })
+            })
+            .then(response => response.json()) // Read the JSON response from PHP
+            .then(data => {
+                if (data.success) {
+                    showToast("Product set to inactive successfully.", "success");
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    showToast("Error: " + data.message, "error");
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast("A network error occurred while trying to update the product.", "error");
+            });
+            closeInactiveModal();
         }
     }
 
@@ -359,6 +598,7 @@ require_once '../../includes/inventory_header.php';
         const input = document.getElementById("searchInput");
         const filter = input.value.toUpperCase();
         const categoryFilter = document.getElementById("categoryFilter").value.toUpperCase();
+        const statusFilter = document.getElementById("statusFilter").value.toUpperCase();
         const table = document.getElementById("productsTable");
         const tr = table.getElementsByTagName("tr");
 
@@ -369,6 +609,7 @@ require_once '../../includes/inventory_header.php';
             const tdSku = tr[i].getElementsByTagName("td")[0];
             const tdName = tr[i].getElementsByTagName("td")[1];
             const rowCategory = (tr[i].getAttribute('data-category') || '').toUpperCase();
+            const rowStatus = (tr[i].getAttribute('data-status') || '').toUpperCase();
             
             if (tdSku || tdName) {
                 const txtValueSku = tdSku.textContent || tdSku.innerText;
@@ -376,8 +617,9 @@ require_once '../../includes/inventory_header.php';
 
                 const textMatch = txtValueSku.toUpperCase().indexOf(filter) > -1 || txtValueName.toUpperCase().indexOf(filter) > -1;
                 const categoryMatch = categoryFilter === '' || rowCategory === categoryFilter;
+                const statusMatch = statusFilter === '' || rowStatus === statusFilter;
 
-                if (textMatch && categoryMatch) {
+                if (textMatch && categoryMatch && statusMatch) {
                     match = true;
                 }
             }

@@ -15,7 +15,7 @@ $current_page = isset($_GET['page']) && is_numeric($_GET['page']) ? max(1, intva
 $offset       = ($current_page - 1) * $per_page;
 
 // --- FILTERS ---
-$filter_action    = isset($_GET['action'])    && in_array($_GET['action'], ['add','update','inactive']) ? $_GET['action'] : '';
+$filter_action    = isset($_GET['action'])    && in_array($_GET['action'], ['add','update','inactive','archive','restore']) ? $_GET['action'] : '';
 $filter_search    = isset($_GET['search'])    ? trim($_GET['search'])    : '';
 $filter_date_from = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
 $filter_date_to   = isset($_GET['date_to'])   ? trim($_GET['date_to'])   : '';
@@ -220,6 +220,8 @@ require_once '../../includes/inventory_header.php';
                     <option value="add"      <?php echo $filter_action === 'add'      ? 'selected' : ''; ?>>Added</option>
                     <option value="update"   <?php echo $filter_action === 'update'   ? 'selected' : ''; ?>>Updated</option>
                     <option value="inactive" <?php echo $filter_action === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
+                    <option value="archive"  <?php echo $filter_action === 'archive'  ? 'selected' : ''; ?>>Archived</option>
+                    <option value="restore"  <?php echo $filter_action === 'restore'  ? 'selected' : ''; ?>>Restored</option>
                 </select>
             </div>
             <div>
@@ -289,6 +291,8 @@ require_once '../../includes/inventory_header.php';
                                 'add'    => ['classes' => 'bg-green-100 text-green-800',   'icon' => 'M12 4v16m8-8H4', 'label' => 'Added'],
                                 'update' => ['classes' => 'bg-yellow-100 text-yellow-800', 'icon' => 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', 'label' => 'Updated'],
                                 'delete' => ['classes' => 'bg-red-100 text-red-800',       'icon' => 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16', 'label' => 'Deleted'],
+                                'archive' => ['classes' => 'bg-orange-100 text-orange-800', 'icon' => 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4', 'label' => 'Archived'],
+                                'restore' => ['classes' => 'bg-cyan-100 text-cyan-800', 'icon' => 'M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15', 'label' => 'Restored'],
                                 default  => ['classes' => 'bg-gray-100 text-gray-700',     'icon' => 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z', 'label' => ucfirst($log['action'])],
                             };
                             $is_deleted_product = str_starts_with($log['product_name'], 'Deleted Product #');
