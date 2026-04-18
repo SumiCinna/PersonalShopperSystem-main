@@ -382,6 +382,7 @@ body {
 .modal-footer {
   padding: 16px 24px; border-top: 1.5px solid var(--border);
   display: flex; justify-content: flex-end; align-items: center; gap: 16px;
+  position: relative;
 }
 .modal-read-status {
   font-size: .85rem; color: var(--muted); display: none; align-items: center; gap: 8px;
@@ -520,8 +521,9 @@ body {
           <input type="checkbox" id="terms" disabled>
           <label for="terms">I have read and agree to the <span class="terms-link" onclick="openModal('termsModal')">Terms &amp; Conditions</span> and <span class="terms-link" onclick="openModal('privacyModal')">Privacy Policy</span>.</label>
         </div>
-        <div class="err-msg" id="err-terms" style="margin-bottom:10px;"></div>
-        <div class="btn-row">
+        <div class="err-msg" id="err-terms" style="margin-bottom:10px;"></div>        <div class="err-msg" id="err-not-read" style="margin-bottom:10px;background:#fff8f0;border-left:3px solid #f97316;padding:8px 12px;border-radius:4px;color:#f97316;display:none;">
+          <strong>⚠ Please read both documents:</strong> You must scroll through the Terms &amp; Conditions and Privacy Policy before you can proceed.
+        </div>        <div class="btn-row">
           <button class="btn btn-outline" onclick="prevStep(3)">&larr; Back</button>
           <button class="btn btn-primary" id="submit-btn" onclick="submitForm()">Create Account</button>
         </div>
@@ -588,7 +590,7 @@ body {
       </div>
       <div class="modal-footer">
         <div class="modal-read-status" id="termsReadStatus">Scroll to read</div>
-        <div style="width:150px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+        <div style="width:100%;height:4px;background:var(--border);border-radius:2px;overflow:hidden;position:absolute;bottom:0;left:0;">
           <div id="termsProgressBar" style="width:0%;height:100%;background:var(--blue);transition:width .3s ease;"></div>
         </div>
       </div>
@@ -665,7 +667,7 @@ body {
       </div>
       <div class="modal-footer">
         <div class="modal-read-status" id="privacyReadStatus">Scroll to read</div>
-        <div style="width:150px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+        <div style="width:100%;height:4px;background:var(--border);border-radius:2px;overflow:hidden;position:absolute;bottom:0;left:0;">
           <div id="privacyProgressBar" style="width:0%;height:100%;background:var(--blue);transition:width .3s ease;"></div>
         </div>
       </div>
@@ -743,6 +745,19 @@ function updateCheckboxState() {
     termsCheckbox.checked = false;
   }
 }
+
+// Add listener to checkbox to validate on attempt
+v('terms').addEventListener('change', function() {
+  if (!termsRead || !privacyRead) {
+    this.checked = false;
+    v('err-not-read').style.display = 'block';
+    setTimeout(function() {
+      v('err-not-read').style.display = 'none';
+    }, 4000);
+  } else {
+    v('err-not-read').style.display = 'none';
+  }
+});
 
 // Close modal when clicking outside of it
 window.onclick = function(event) {
@@ -878,12 +893,22 @@ function buildReview() {
 function submitForm() {
   var termsEl  = v('terms');
   var errTerms = v('err-terms');
+  var errNotRead = v('err-not-read');
+  
+  // Check if documents have been read
+  if (!termsRead || !privacyRead) {
+    errNotRead.style.display = 'block';
+    return;
+  }
+  
   if (!termsEl.checked) {
     errTerms.textContent = 'You must agree to the Terms and Conditions.';
     errTerms.classList.add('show');
+    errNotRead.style.display = 'none';
     return;
   }
   errTerms.classList.remove('show');
+  errNotRead.style.display = 'none';
   var btn = v('submit-btn');
   btn.disabled = true;
   btn.textContent = 'Creating account\u2026';
