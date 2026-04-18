@@ -36,8 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $address = implode(', ', $addressParts);
 
     $categories   = $_POST['categories']    ?? [];
-    $new_category = trim($_POST['new_category'] ?? '');
-    if (!empty($new_category)) $categories[] = $new_category;
 
     if (empty($name) || empty($supplier_type) || empty($contact_person) || empty($position) ||
         empty($region) || empty($city) || empty($barangay)) {
@@ -128,7 +126,7 @@ require_once '../../includes/inventory_header.php';
                 </div>
                 <div>
                     <label class="block text-sm font-semibold mb-1">Position</label>
-                    <input type="text" name="position" required
+                    <input type="text" name="position" required maxlength="50"
                            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500"
                            placeholder="e.g., Sales Manager">
                 </div>
@@ -150,12 +148,13 @@ require_once '../../includes/inventory_header.php';
                 </div>
                 <div>
                     <label class="block text-sm font-semibold mb-1">Email</label>
-                    <input type="email" name="email"
+                    <input type="email" name="email" id="emailInput" maxlength="256"
                            pattern="^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.com$"
                            title="Must be a valid email ending with .com"
                            required
-                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500"
+                           class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 hover:border-blue-400 transition-colors"
                            placeholder="example@domain.com">
+                    <p id="emailError" class="text-[10px] text-red-500 font-semibold mt-1 hidden">Must contain '@' and end with '.com'</p>
                 </div>
             </div>
 
@@ -224,7 +223,7 @@ require_once '../../includes/inventory_header.php';
                             Building / Lot No.
                             <span class="ml-1 text-xs font-normal text-slate-400">(Optional)</span>
                         </label>
-                        <input type="text" name="building_lot"
+                        <input type="text" name="building_lot" maxlength="50"
                                class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500"
                                placeholder="e.g., Unit 2B, Lot 5, Bldg. A">
                     </div>
@@ -234,30 +233,53 @@ require_once '../../includes/inventory_header.php';
 
             <!-- Categories -->
             <div>
-                <label class="block text-sm font-semibold mb-1">Categories <span class="text-red-500">*</span></label>
-                <p class="text-xs text-slate-500 mb-2">Select at least one category that this supplier can provide.</p>
-                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm mt-3 mb-4 category-group">
+                <div class="flex justify-between items-end mb-2">
+                    <div>
+                        <label class="block text-sm font-semibold mb-1">Categories <span class="text-red-500">*</span></label>
+                        <p class="text-xs text-slate-500">Select at least one category that this supplier can provide.</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-3 mb-5" id="categoryGroup">
                     <?php
                     $categoriesList = [
                         'Beverages','Canned Goods','Condiments','Dairy',
                         'Fresh Produce','Noodles','Snacks','Cooking Essentials',
                         'Meat & Poultry',
                     ];
-                    foreach ($categoriesList as $cat) {
-                        echo "<label class='flex items-center gap-2'>
-                                <input type='checkbox' name='categories[]' value='{$cat}'
-                                       class='category-checkbox rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4'>
-                                " . htmlspecialchars($cat) . "
-                              </label>";
+                    foreach ($categoriesList as $index => $cat) {
+                        $elId = 'cat_wrap_' . $index;
+                        $escapedCat = htmlspecialchars($cat, ENT_QUOTES, 'UTF-8');
+                        echo "<div class='flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors group' id='{$elId}'>
+                                <label class='flex items-center gap-2 flex-1 cursor-pointer truncate'>
+                                    <input type='checkbox' name='categories[]' value='{$escapedCat}'
+                                           class='category-checkbox rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4'>
+                                    <span class='text-sm font-medium text-slate-700 truncate'>{$escapedCat}</span>
+                                </label>
+                                <button type='button' onclick=\"promptDeleteCategory('{$elId}')\" 
+                                        class='text-red-500 hover:text-red-700 focus:outline-none transition-colors ml-2' 
+                                        title='Remove Category'>
+                                    <svg class='w-4 h-4' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                                        <path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 18L18 6M6 6l12 12'/>
+                                    </svg>
+                                </button>
+                              </div>";
                     }
                     ?>
                 </div>
-                <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                    <label class="block text-xs font-semibold text-slate-700 mb-1">Add Custom Category (Optional)</label>
-                    <input type="text" name="new_category" id="new_category"
-                           class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500"
-                           placeholder="Type a custom category name…">
-                    <p class="text-[10px] text-slate-500 mt-1">If the category isn't in the list above, you can add it here.</p>
+
+                <div class="p-4 bg-blue-50 border border-blue-100 rounded-xl">
+                    <label class="block text-sm font-bold text-blue-900 mb-1">Add Custom Category</label>
+                    <p class="text-xs text-blue-700 mb-3">If the category isn't in the list above, you can add it here.</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="new_category_input" maxlength="50"
+                               class="flex-1 border border-blue-200 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-blue-500 placeholder-blue-300 bg-white"
+                               placeholder="Type a custom category name (max 50 chars)…">
+                        <button type="button" id="addCatBtn"
+                                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold rounded-lg transition-colors whitespace-nowrap shadow-sm">
+                            Add to List
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -271,6 +293,23 @@ require_once '../../includes/inventory_header.php';
         </form>
     </div>
 </main>
+
+<!-- Delete Category Modal -->
+<div id="deleteCatModal" class="fixed inset-0 z-[100] hidden bg-slate-900/50 backdrop-blur-sm flex items-center justify-center">
+    <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 text-center mx-4">
+        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+        </div>
+        <h3 class="text-xl font-black text-slate-800 mb-2">Remove Category?</h3>
+        <p class="text-slate-500 text-sm mb-6">Are you sure you want to remove this category from the list? It will no longer be an option.</p>
+        <div class="flex gap-3 justify-center">
+            <button type="button" onclick="closeDeleteCatModal()" class="px-5 py-2.5 font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors w-full">Cancel</button>
+            <button type="button" id="confirmDeleteCatBtn" class="px-5 py-2.5 font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 transition-colors w-full">Yes, Remove</button>
+        </div>
+    </div>
+</div>
 
 <script>
 /* ─── PSGC API base ────────────────────────────────────────────────────── */
@@ -574,13 +613,24 @@ document.getElementById('barangay_select').addEventListener('change', function (
 });
 
 /* ─── Form validation ──────────────────────────────────────────────────── */
+document.getElementById('emailInput').addEventListener('input', function() {
+    const val = this.value;
+    const errorEl = document.getElementById('emailError');
+    if (val && (!val.includes('@') || !val.endsWith('.com'))) {
+        errorEl.classList.remove('hidden');
+        this.classList.add('border-red-500', 'focus:ring-red-500');
+    } else {
+        errorEl.classList.add('hidden');
+        this.classList.remove('border-red-500', 'focus:ring-red-500');
+    }
+});
+
 document.getElementById('supplierForm').addEventListener('submit', function (e) {
     // Category check
     const checkedCount  = document.querySelectorAll('.category-checkbox:checked').length;
-    const customCat     = document.getElementById('new_category').value.trim();
-    if (checkedCount === 0 && customCat === '') {
+    if (checkedCount === 0) {
         e.preventDefault();
-        alert('Please select at least one existing category or add a custom one.');
+        alert('Please select at least one category.');
         return;
     }
 
@@ -597,6 +647,61 @@ document.getElementById('supplierForm').addEventListener('submit', function (e) 
             document.getElementById(focus).focus();
             return;
         }
+    }
+});
+
+/* ─── Category Management ────────────────────────────────────────────────── */
+let catIdToDelete = null;
+
+window.promptDeleteCategory = function(elementId) {
+    catIdToDelete = elementId;
+    document.getElementById('deleteCatModal').classList.remove('hidden');
+};
+
+window.closeDeleteCatModal = function() {
+    document.getElementById('deleteCatModal').classList.add('hidden');
+    catIdToDelete = null;
+};
+
+document.getElementById('confirmDeleteCatBtn').addEventListener('click', function() {
+    if (catIdToDelete) {
+        const el = document.getElementById(catIdToDelete);
+        if (el) el.remove();
+    }
+    closeDeleteCatModal();
+});
+
+document.getElementById('addCatBtn').addEventListener('click', function() {
+    const input = document.getElementById('new_category_input');
+    const val = input.value.trim();
+    if (!val) return;
+    
+    const escapedVal = val.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+    const id = 'cat_wrap_custom_' + Date.now();
+    const html = `
+        <div class='flex items-center justify-between border border-blue-200 rounded-lg px-3 py-2.5 bg-blue-50 hover:bg-blue-100 transition-colors group' id='${id}'>
+            <label class='flex items-center gap-2 flex-1 cursor-pointer truncate'>
+                <input type='checkbox' name='categories[]' value='${escapedVal}' checked
+                       class='category-checkbox rounded border-blue-400 text-blue-600 focus:ring-blue-500 w-4 h-4'>
+                <span class='text-sm font-medium text-blue-900 truncate'>${escapedVal}</span>
+            </label>
+            <button type='button' onclick="promptDeleteCategory('${id}')" 
+                    class='text-red-500 hover:text-red-700 focus:outline-none transition-colors ml-2' 
+                    title='Remove Category'>
+                <svg class='w-4 h-4' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                    <path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 18L18 6M6 6l12 12'/>
+                </svg>
+            </button>
+        </div>
+    `;
+    input.value = '';
+    document.getElementById('categoryGroup').insertAdjacentHTML('beforeend', html);
+});
+
+document.getElementById('new_category_input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('addCatBtn').click();
     }
 });
 

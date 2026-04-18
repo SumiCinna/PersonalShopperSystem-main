@@ -11,7 +11,7 @@ $error = '';
 
 function log_activity($conn, $user_id, $action, $product_id, $product_name, $field = null, $old = null, $new = null) {
     $stmt = $conn->prepare("INSERT INTO activity_logs (user_id, action, product_id, product_name, field_changed, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("ississs", $user_id, $action, $product_id, $product_name, $field, $old, $new);
+    $stmt->bind_param("isissss", $user_id, $action, $product_id, $product_name, $field, $old, $new);
     $stmt->execute();
     $stmt->close();
 }

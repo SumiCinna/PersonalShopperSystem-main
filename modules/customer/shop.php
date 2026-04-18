@@ -20,8 +20,38 @@ while ($row = $w_result->fetch_assoc()) {
 }
 $w_stmt->close();
 
-$cat_query = "SELECT DISTINCT category FROM products WHERE status = 'active' ORDER BY category ASC";
-$categories = $conn->query($cat_query);
+// Fetch distinct categories from products
+$all_categories = [];
+$cat_query = "SELECT DISTINCT category FROM products WHERE status = 'active'";
+$res = $conn->query($cat_query);
+while ($row = $res->fetch_assoc()) {
+    if (!empty($row['category'])) {
+        $all_categories[] = $row['category'];
+    }
+}
+
+// Fetch categories from suppliers JSON
+$sup_query = "SELECT supplied_categories FROM suppliers";
+$s_res = $conn->query($sup_query);
+if ($s_res) {
+    while ($row = $s_res->fetch_assoc()) {
+        if (!empty($row['supplied_categories'])) {
+            $decoded = json_decode($row['supplied_categories'], true);
+            if (is_array($decoded)) {
+                $all_categories = array_merge($all_categories, $decoded);
+            }
+        }
+    }
+}
+
+// Add our default core categories just in case
+$default_cats = [
+    'Beverages','Canned Goods','Condiments','Dairy',
+    'Fresh Produce','Noodles','Snacks','Cooking Essentials',
+    'Meat & Poultry'
+];
+$all_categories = array_unique(array_filter(array_merge($all_categories, $default_cats)));
+sort($all_categories);
 
 $cart_query = "SELECT product_id, quantity FROM cart WHERE user_id = ?";
 $c_stmt = $conn->prepare($cart_query);
@@ -113,14 +143,14 @@ require_once '../../includes/customer_header.php';
                                 All Products
                             </a>
                         </li>
-                        <?php if ($categories->num_rows > 0): ?>
-                            <?php while ($cat = $categories->fetch_assoc()): ?>
+                        <?php if (!empty($all_categories)): ?>
+                            <?php foreach ($all_categories as $cat): ?>
                                 <li>
-                                    <a href="shop.php?category=<?php echo urlencode($cat['category']); ?>" class="block px-3 py-2 rounded-lg transition <?php echo $selected_category === $cat['category'] ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-100'; ?>">
-                                        <?php echo htmlspecialchars($cat['category']); ?>
+                                    <a href="shop.php?category=<?php echo urlencode($cat); ?>" class="block px-3 py-2 rounded-lg transition <?php echo $selected_category === $cat ? 'bg-blue-50 text-blue-700 font-bold' : 'text-gray-600 hover:bg-gray-100'; ?>">
+                                        <?php echo htmlspecialchars($cat); ?>
                                     </a>
                                 </li>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php endif; ?>
                     </ul>
                 </div>
@@ -393,7 +423,7 @@ function submitCart(productId) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ product_id: productId, action: 'update', quantity: quantity })
-    }).then(res => res.json()).then(data => {
+    }).then(res => res.json()).then data => {
         if (data.success) {
             showToast(data.message, 'success');
 
