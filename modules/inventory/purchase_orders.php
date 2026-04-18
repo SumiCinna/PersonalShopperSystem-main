@@ -27,7 +27,7 @@ $products = [];
 $purchaseOrders = [];
 
 if ($schemaReady) {
-    $suppliersRes = $conn->query("SELECT supplier_id, name, contact_person, phone, supplied_categories FROM suppliers WHERE status = 'active' ORDER BY name ASC");
+    $suppliersRes = $conn->query("SELECT supplier_id, name, contact_person, phone, supplied_categories, IFNULL(credit_balance, 0) AS credit_balance FROM suppliers WHERE status = 'active' ORDER BY name ASC");
     while ($row = $suppliersRes->fetch_assoc()) {
         $suppliers[] = $row;
     }
@@ -62,10 +62,17 @@ if ($schemaReady) {
 
     $searchQuery = trim($_GET['search'] ?? '');
     $filterProduct = (int)($_GET['filter_product'] ?? 0);
+    $statusFilter = trim($_GET['status'] ?? 'all');
 
     $whereClauses = [];
     $params = [];
     $types = '';
+
+    if ($statusFilter !== 'all') {
+        $whereClauses[] = "po.status = ?";
+        $params[] = $statusFilter;
+        $types .= 's';
+    }
 
     if ($searchQuery !== '') {
         $whereClauses[] = "(po.po_number LIKE ? OR s.name LIKE ?)";
@@ -109,7 +116,9 @@ if ($schemaReady) {
             po.status,
             po.order_date,
             po.expected_delivery,
+            po.subtotal,
             po.grand_total,
+            po.credit_applied,
             po.notes,
             po.rejection_reason,
             po.created_at,
@@ -139,7 +148,7 @@ if ($schemaReady) {
         $whereSql
         GROUP BY
             po.po_id, po.po_number, po.status, po.order_date, po.expected_delivery,
-            po.grand_total, po.notes, po.rejection_reason, po.created_at,
+            po.subtotal, po.grand_total, po.credit_applied, po.notes, po.rejection_reason, po.created_at,
             s.name, u1.username, u2.username
         ORDER BY po.created_at DESC
         LIMIT ? OFFSET ?
@@ -216,8 +225,17 @@ require_once '../../includes/inventory_header.php';
             </div>
             
             <form action="" method="GET" class="flex flex-col sm:flex-row gap-2 items-center">
+                <select name="status" class="rounded border border-slate-300 px-3 py-1.5 text-sm w-full sm:w-40">
+                    <option value="all">All Status</option>
+                    <?php foreach (['pending_approval', 'approved', 'rejected', 'ordered', 'shipped', 'delivered', 'partially_received', 'completed'] as $st): ?>
+                        <option value="<?php echo htmlspecialchars($st); ?>" <?php echo $statusFilter === $st ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $st))); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+
                 <input type="text" name="search" value="<?php echo htmlspecialchars($searchQuery ?? ''); ?>" placeholder="Search PO or Supplier..." class="rounded border border-slate-300 px-3 py-1.5 text-sm w-full sm:w-48">
-                
+
                 <select name="filter_product" class="rounded border border-slate-300 px-3 py-1.5 text-sm w-full sm:w-48 max-w-xs">
                     <option value="">All Products</option>
                     <?php foreach ($products as $p): ?>
@@ -228,7 +246,7 @@ require_once '../../includes/inventory_header.php';
                 </select>
 
                 <button type="submit" class="rounded-lg bg-blue-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-blue-700 w-full sm:w-auto">Filter</button>
-                <?php if (!empty($_GET['search']) || !empty($_GET['filter_product'])): ?>
+                <?php if (!empty($_GET['search']) || !empty($_GET['filter_product']) || $statusFilter !== 'all'): ?>
                     <a href="purchase_orders.php" class="rounded-lg bg-slate-200 text-slate-700 px-3 py-1.5 text-sm font-semibold hover:bg-slate-300 w-full sm:w-auto text-center">Clear</a>
                 <?php endif; ?>
             </form>
@@ -282,7 +300,14 @@ require_once '../../includes/inventory_header.php';
                                         </ul>
                                     <?php endif; ?>
                                 </td>
-                                <td class="px-4 py-3 align-top text-right font-bold text-slate-800">₱<?php echo number_format((float)$po['grand_total'], 2); ?></td>
+                                <td class="px-4 py-3 align-top text-right">
+                                    <div class="font-bold text-slate-800 text-base leading-tight">₱<?php echo number_format((float)$po['grand_total'], 2); ?></div>
+                                    <?php if (isset($po['credit_applied']) && (float)$po['credit_applied'] > 0): ?>
+                                        <div class="text-[10px] bg-green-50 text-green-700 font-semibold px-2 py-0.5 rounded mt-1 border border-green-200 inline-block">
+                                            - ₱<?php echo number_format((float)$po['credit_applied'], 2); ?> Credit
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="px-4 py-3 align-top">
                                     <div class="flex flex-col gap-2">
                                         <?php if (in_array($po['status'], ['approved', 'ordered', 'shipped', 'delivered', 'partially_received'], true)): ?>
@@ -317,19 +342,19 @@ require_once '../../includes/inventory_header.php';
                 <span class="text-sm text-slate-500">Showing page <?php echo $page; ?></span>
                 <div class="flex gap-1">
                     <?php if ($page > 1): ?>
-                        <a href="?page=<?php echo $page - 1; ?>&search=<?php echo urlencode($searchQuery); ?>&filter_product=<?php echo urlencode($filterProduct); ?>" class="px-3 py-1 bg-white border border-slate-300 rounded text-sm text-slate-700 hover:bg-slate-100">Previous</a>
+                        <a href="?page=<?php echo $page - 1; ?>&status=<?php echo urlencode($statusFilter); ?>&search=<?php echo urlencode($searchQuery); ?>&filter_product=<?php echo urlencode($filterProduct); ?>" class="px-3 py-1 bg-white border border-slate-300 rounded text-sm text-slate-700 hover:bg-slate-100">Previous</a>
                     <?php endif; ?>
-                    
+
                     <?php for ($i = 1; $i <= $totalPages; $i++): ?>
                         <?php if ($i == $page): ?>
                             <span class="px-3 py-1 bg-slate-800 border border-slate-800 rounded text-sm text-white"><?php echo $i; ?></span>
                         <?php else: ?>
-                            <a href="?page=<?php echo $i; ?>&search=<?php echo urlencode($searchQuery); ?>&filter_product=<?php echo urlencode($filterProduct); ?>" class="px-3 py-1 bg-white border border-slate-300 rounded text-sm text-slate-700 hover:bg-slate-100"><?php echo $i; ?></a>
+                            <a href="?page=<?php echo $i; ?>&status=<?php echo urlencode($statusFilter); ?>&search=<?php echo urlencode($searchQuery); ?>&filter_product=<?php echo urlencode($filterProduct); ?>" class="px-3 py-1 bg-white border border-slate-300 rounded text-sm text-slate-700 hover:bg-slate-100"><?php echo $i; ?></a>
                         <?php endif; ?>
                     <?php endfor; ?>
 
                     <?php if ($page < $totalPages): ?>
-                        <a href="?page=<?php echo $page + 1; ?>&search=<?php echo urlencode($searchQuery); ?>&filter_product=<?php echo urlencode($filterProduct); ?>" class="px-3 py-1 bg-white border border-slate-300 rounded text-sm text-slate-700 hover:bg-slate-100">Next</a>
+                        <a href="?page=<?php echo $page + 1; ?>&status=<?php echo urlencode($statusFilter); ?>&search=<?php echo urlencode($searchQuery); ?>&filter_product=<?php echo urlencode($filterProduct); ?>" class="px-3 py-1 bg-white border border-slate-300 rounded text-sm text-slate-700 hover:bg-slate-100">Next</a>
                     <?php endif; ?>
                 </div>
             </div>
@@ -419,10 +444,12 @@ require_once '../../includes/inventory_header.php';
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                                 Add Item
                             </button>
-                            <div class="text-right">
-                                <span class="text-xs text-slate-500">Grand Total</span>
-                                <div class="font-black text-slate-900 text-lg">₱<span id="poSubtotal">0.00</span></div>
-                            </div>
+                              <div class="text-right">
+                                  <div class="text-xs text-slate-500 mb-0.5">Subtotal: ₱<span id="poSubtotal">0.00</span></div>
+                                  <div id="creditRow" class="text-[11px] text-emerald-600 font-bold hidden mb-0.5" style="display:none;">-₱<span id="poCredit">0.00</span> Credit Applied</div>
+                                  <div class="text-xs text-slate-500 uppercase font-black tracking-wide">Grand Total</div>
+                                  <div class="font-black text-slate-900 text-lg leading-none">₱<span id="poGrandTotal">0.00</span></div>
+                              </div>
                         </div>
                     </div>
 
@@ -553,7 +580,7 @@ function productOptionsHTML(selectedId = '') {
     return html;
 }
 
-// ─── Compute grand total ──────────────────────────────────────────────────────
+// ─── Compute grand total
 function computeSubtotal() {
     let total = 0;
     container.querySelectorAll('.po-row').forEach(row => {
@@ -562,6 +589,34 @@ function computeSubtotal() {
         total += qty * cost;
     });
     subtotalEl.textContent = total.toFixed(2);
+    
+    // Check available credit from selected supplier
+    const sid = supplierSel.value;
+    let availableCredit = 0;
+    if (sid) {
+        const supplier = suppliers.find(s => String(s.supplier_id) === String(sid));
+        if (supplier && supplier.credit_balance) {
+            availableCredit = Number(supplier.credit_balance);
+        }
+    }
+    
+    // Apply credit to UI
+    const creditRow = document.getElementById('creditRow');
+    const creditEl = document.getElementById('poCredit');
+    const grandTotalEl = document.getElementById('poGrandTotal');
+    
+    let creditApplied = 0;
+    if (availableCredit > 0 && total > 0) {
+        creditApplied = Math.min(availableCredit, total);
+        creditEl.textContent = creditApplied.toFixed(2);
+        creditRow.style.display = 'block';
+    } else {
+        creditRow.style.display = 'none';
+        creditEl.textContent = '0.00';
+    }
+    
+    const finalTotal = total - creditApplied;
+    grandTotalEl.textContent = finalTotal.toFixed(2);
 }
 
 // ─── Update a row after product or type changes ───────────────────────────────

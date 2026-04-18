@@ -307,10 +307,17 @@ require_once '../../includes/inventory_header.php';
                             ?>
                             <div class="text-[13px] text-slate-700 flex justify-between items-center bg-white px-3 py-2 rounded shadow-sm border border-blue-100">
                                 <div>
-                                    <span class="font-black text-blue-800 tabular-nums">&#10003; <?php echo $b['remaining_quantity']; ?> pcs</span> 
-                                    <span class="text-slate-400 mx-1">&mdash;</span> 
-                                    <span class="font-semibold">Exp: <?php echo date('M d, Y', strtotime($b['expiry_date'])); ?></span>
-                                    <?php echo $warning; ?>
+                                    <div class="mb-0.5">
+                                        <span class="font-black text-blue-800 tabular-nums">&#10003; <?php echo $b['remaining_quantity']; ?> pcs</span> 
+                                        <?php echo $warning; ?>
+                                    </div>
+                                    <div class="text-xs text-slate-600 block sm:inline-block">
+                                        <span class="font-semibold text-slate-700">Manufacture Date:</span> <?php echo $b['manufacture_date'] ? date('M d, Y', strtotime($b['manufacture_date'])) : 'N/A'; ?>
+                                        <span class="text-slate-300 mx-1 hidden sm:inline-block">|</span>
+                                    </div>
+                                    <div class="text-xs text-slate-600 block sm:inline-block">
+                                        <span class="font-semibold text-slate-700">Expiration Date:</span> <?php echo $b['expiry_date'] ? date('M d, Y', strtotime($b['expiry_date'])) : 'N/A'; ?>
+                                    </div>
                                 </div>
                                 <span class="text-[10px] text-slate-400 font-mono tracking-widest hidden sm:inline-block">BATCH #<?php echo $b['batch_number']; ?></span>
                             </div>

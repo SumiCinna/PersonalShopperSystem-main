@@ -272,14 +272,13 @@ require_once '../../includes/admin_header.php';
                                             <form action="../../core/admin/po_approval.php" method="POST" class="inline">
                                                 <input type="hidden" name="action" value="approve_po">
                                                 <input type="hidden" name="po_id" value="<?php echo (int)$po['po_id']; ?>">
-                                                <button class="w-full rounded bg-green-600 text-white px-3 py-2 text-xs font-bold hover:bg-green-700">Approve PO</button>
+                                                <button class="w-full rounded bg-green-600 text-white px-4 py-2 text-sm font-bold hover:bg-green-700">Approve PO</button>
                                             </form>
 
-                                            <form action="../../core/admin/po_approval.php" method="POST" class="space-y-1">
+                                            <form action="../../core/admin/po_approval.php" method="POST" class="space-y-2">
                                                 <input type="hidden" name="action" value="reject_po">
                                                 <input type="hidden" name="po_id" value="<?php echo (int)$po['po_id']; ?>">
-                                                <input type="text" name="reason" placeholder="Reason for rejection" class="w-full rounded border border-slate-300 px-2 py-1 text-xs" required>
-                                                <button class="w-full rounded bg-red-600 text-white px-3 py-2 text-xs font-bold hover:bg-red-700">Reject PO</button>
+                                                <button type="button" onclick="openRejectModal(<?php echo (int)$po['po_id']; ?>)" class="w-full rounded bg-red-600 text-white px-4 py-2 text-sm font-bold hover:bg-red-700">Reject PO</button>
                                             </form>
                                         </div>
                                     <?php else: ?>
@@ -310,5 +309,107 @@ require_once '../../includes/admin_header.php';
 
     <?php endif; ?>
 </main>
+
+<!-- Reject PO Modal -->
+<div id="rejectModal" class="fixed inset-0 z-50 hidden bg-slate-900/50 backdrop-blur-sm flex items-center justify-center">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
+        <form id="rejectForm" action="../../core/admin/po_approval.php" method="POST">
+            <input type="hidden" name="action" value="reject_po">
+            <input type="hidden" name="po_id" id="rejectPoId" value="">
+            
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 class="text-lg font-black text-slate-800">Reject Purchase Order</h3>
+                <button type="button" onclick="closeRejectModal()" class="text-slate-400 hover:text-slate-600">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-bold text-slate-700 mb-2">Select a reason or type your own:</label>
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <button type="button" onclick="appendReason('Supplier prices are too high.')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs rounded-full font-medium transition-colors">Prices too high</button>
+                        
+                        <button type="button" onclick="appendReason('Order duplicate. We already placed this.')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs rounded-full font-medium transition-colors">Duplicate Order</button>
+                        <button type="button" onclick="appendReason('Please reduce order quantities.')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs rounded-full font-medium transition-colors">Reduce Qty</button>
+                    </div>
+                    <textarea name="reason" id="rejectReason" rows="3" minlength="15" maxlength="100" required class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-red-500 focus:ring focus:ring-red-200 transition-colors" placeholder="Explain why this PO is being rejected (15-100 chars)..." oninput="updateCharCount()"></textarea>
+                    <div class="flex justify-between items-center mt-1">
+                        <span id="charCountMsg" class="text-xs text-red-500 font-medium">Minimum 15 characters required.</span>
+                        <span id="charCount" class="text-xs text-slate-500 font-medium">0 / 100</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-6 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                <button type="button" onclick="closeRejectModal()" class="px-4 py-2 font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50">Cancel</button>
+                <button type="submit" id="rejectSubmitBtn" class="px-6 py-2 font-bold text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">Confirm Reject</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openRejectModal(poId) {
+        document.getElementById('rejectPoId').value = poId;
+        document.getElementById('rejectReason').value = '';
+        updateCharCount();
+        document.getElementById('rejectModal').classList.remove('hidden');
+    }
+
+    function closeRejectModal() {
+        document.getElementById('rejectModal').classList.add('hidden');
+    }
+
+    function appendReason(text) {
+        const textarea = document.getElementById('rejectReason');
+        if (textarea.value.length > 0 && !textarea.value.endsWith(' ')) {
+            textarea.value += ' ' + text;
+        } else {
+            textarea.value += text;
+        }
+        if (textarea.value.length > 100) {
+            textarea.value = textarea.value.substring(0, 100);
+        }
+        updateCharCount();
+    }
+
+    function updateCharCount() {
+        const textarea = document.getElementById('rejectReason');
+        const countSpan = document.getElementById('charCount');
+        const msgSpan = document.getElementById('charCountMsg');
+        const submitBtn = document.getElementById('rejectSubmitBtn');
+        
+        const len = textarea.value.length;
+        countSpan.textContent = len + ' / 100';
+        
+        if (len === 0) {
+            msgSpan.textContent = 'Required.';
+            msgSpan.className = 'text-xs text-red-500 font-medium';
+            submitBtn.disabled = true;
+        } else if (len < 15) {
+            msgSpan.textContent = `Need ${15 - len} more characters.`;
+            msgSpan.className = 'text-xs text-amber-500 font-medium';
+            submitBtn.disabled = true;
+        } else if (len > 100) {
+            msgSpan.textContent = 'Too long!';
+            msgSpan.className = 'text-xs text-red-500 font-medium';
+            submitBtn.disabled = true;
+        } else {
+            msgSpan.textContent = 'Looks good.';
+            msgSpan.className = 'text-xs text-green-600 font-medium';
+            submitBtn.disabled = false;
+        }
+    }
+    
+    // Close modal on outside click
+    document.getElementById('rejectModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeRejectModal();
+        }
+    });
+</script>
 
 <?php require_once '../../includes/admin_footer.php'; ?>

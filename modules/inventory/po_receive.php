@@ -122,39 +122,6 @@ require_once '../../includes/inventory_header.php';
         </div>
     <?php else: ?>
 
-    <!-- ========================================
-         BAD ORDERS PROCESS GUIDE
-         ======================================== -->
-    <section class="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-6">
-        <div class="flex items-start gap-4">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-blue-600 flex-shrink-0 mt-1">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M11.25 11.25.75 2.632m0 11.018v7.5M12 21.75h8.243a2.25 2.25 0 002.25-2.25V2.894m0 0H21.75M11.25 11.25L9.8 9.175m0 0H4.5M9.8 9.175L12 5.595m0 0H21.75m-15 12.75h15" />
-            </svg>
-            <div class="flex-1">
-                <h3 class="font-bold text-blue-900 mb-2">Bad Orders (Return to Vendor) Process</h3>
-                <div class="text-sm text-blue-800 space-y-2">
-                    <div class="flex items-start gap-2">
-                        <span class="font-bold text-blue-600">📋 1. Receiving & Inspection:</span>
-                        <span>Count delivered items. If issues found (expired, damaged, wrong item, near expiry), mark as REJECTED in the form below.</span>
-                    </div>
-                    <div class="flex items-start gap-2">
-                        <span class="font-bold text-blue-600">🚫 2. Segregation:</span>
-                        <span>Rejected items are NOT added to sellable inventory. They're moved to the "Return Area" for tracking and return processing.</span>
-                    </div>
-                    <div class="flex items-start gap-2">
-                        <span class="font-bold text-blue-600">📤 3. Return Processing:</span>
-                        <span>Status workflow: <strong>Pending Return</strong> → <strong>Sent to Supplier</strong> → <strong>Received by Supplier</strong> → <strong>Closed</strong></span>
-                    </div>
-                    <div class="flex items-start gap-2">
-                        <span class="font-bold text-blue-600">✅ 4. Resolution:</span>
-                        <span><strong>Option A: Replace</strong> (supplier sends new stock) | <strong>Option B: Credit Memo</strong> (deducted in next purchase)</span>
-                    </div>
-                </div>
-                <p class="text-xs text-blue-700 mt-3 italic">👉 Go to <a href="supplier_returns.php" class="font-bold underline">Supplier Returns</a> to track and manage all bad orders.</p>
-            </div>
-        </div>
-    </section>
-
     <section class="bg-white rounded-xl border border-slate-200 shadow-sm mb-6">
         <div class="px-5 py-4 border-b border-slate-200 flex flex-col lg:flex-row lg:justify-between gap-3">
             <div>

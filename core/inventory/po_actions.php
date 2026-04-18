@@ -136,21 +136,57 @@ if ($action === 'create_po') {
     try {
         $conn->begin_transaction();
 
+        // Check for available credit memo balance for this supplier
+        $creditQ = $conn->query("SELECT credit_balance FROM suppliers WHERE supplier_id = {$supplierId}");
+        $supplierCredit = $creditQ && $creditQ->num_rows > 0 ? (float)$creditQ->fetch_assoc()['credit_balance'] : 0.00;
+
+        $grandTotal = $subtotal;
+        $creditApplied = 0.00;
+
+        // Apply credit safely
+        if ($supplierCredit > 0) {
+            if ($supplierCredit >= $grandTotal) {
+                // Credit memo fully covers this PO
+                $creditApplied = $grandTotal;
+                $grandTotal = 0;
+            } else {
+                // Credit memo partially covers this PO
+                $creditApplied = $supplierCredit;
+                $grandTotal -= $supplierCredit;
+            }
+        }
+
         $insertPo = $conn->prepare(
-            "INSERT INTO purchase_orders (po_number, supplier_id, status, order_date, expected_delivery, subtotal, tax_amount, grand_total, notes, created_by)
-             VALUES (?, ?, 'pending_approval', CURDATE(), ?, ?, 0.00, ?, ?, ?)"
+            "INSERT INTO purchase_orders (po_number, supplier_id, status, order_date, expected_delivery, subtotal, tax_amount, grand_total, credit_applied, notes, created_by)  
+             VALUES (?, ?, 'pending_approval', CURDATE(), ?, ?, 0.00, ?, ?, ?, ?)" 
         );
         if (!$insertPo) throw new Exception($conn->error);
 
         $expectedDeliveryValue = $expectedDelivery !== '' ? $expectedDelivery : null;
-        $grandTotal = $subtotal;
-        $insertPo->bind_param('sisddsi', $poNumber, $supplierId, $expectedDeliveryValue, $subtotal, $grandTotal, $notes, $userId);
-        if (!$insertPo->execute()) throw new Exception($insertPo->error);
         
+        $insertPo->bind_param('sisdddsi', $poNumber, $supplierId, $expectedDeliveryValue, $subtotal, $grandTotal, $creditApplied, $notes, $userId);
+        if (!$insertPo->execute()) throw new Exception($insertPo->error);       
+
         $poId = (int)$conn->insert_id;
         $insertPo->close();
 
-        // Use total_pcs mapping in poi.ordered_qty so system tracks physical stock accurately over receiving.
+        // If we applied any credit, deduct it from the supplier's balance and log it
+        if ($creditApplied > 0) {
+            $conn->query("UPDATE suppliers SET credit_balance = credit_balance - {$creditApplied} WHERE supplier_id = {$supplierId}");
+            
+            if (table_exists($conn, 'supplier_credit_logs')) {
+                $logCredit = $conn->prepare("
+                    INSERT INTO supplier_credit_logs (supplier_id, po_id, amount, action, notes) 
+                    VALUES (?, ?, ?, 'credit_used', 'Credit applied to new Purchase Order')
+                ");
+                $logCredit->bind_param('iid', $supplierId, $poId, $creditApplied);
+                $logCredit->execute();
+                $logCredit->close();
+            }
+            
+            // Add a note to the PO about the credit
+            $conn->query("UPDATE purchase_orders SET notes = CONCAT(IFNULL(notes, ''), '\n[Used Credit Memo: PHP " . number_format($creditApplied, 2) . "]') WHERE po_id = {$poId}");
+        }        // Use total_pcs mapping in poi.ordered_qty so system tracks physical stock accurately over receiving.
         $insertItem = $conn->prepare(
             "INSERT INTO purchase_order_items (po_id, product_id, ordered_qty, unit_cost, line_total, order_type, box_quantity) VALUES (?, ?, ?, ?, ?, ?, ?)"
         );
@@ -427,8 +463,14 @@ if ($action === 'update_return_status') {
         redirect_with_message('../../modules/inventory/supplier_returns.php', 'Invalid return status or resolution update.', 'error');
     }
 
-    // Fetch current return to check status change
-    $fetchReturn = $conn->prepare('SELECT status, resolution_type FROM supplier_returns WHERE return_id = ? LIMIT 1');
+    // Fetch current return with full details to evaluate resolution actions
+    $fetchReturn = $conn->prepare('
+        SELECT sr.status, sr.resolution_type, sr.supplier_id, sr.product_id, sr.rejected_qty, 
+               poi.unit_cost, poi.order_type, poi.box_quantity
+        FROM supplier_returns sr 
+        LEFT JOIN purchase_order_items poi ON poi.po_item_id = sr.po_item_id
+        WHERE sr.return_id = ? LIMIT 1
+    ');
     $fetchReturn->bind_param('i', $returnId);
     $fetchReturn->execute();
     $currentReturn = $fetchReturn->get_result()->fetch_assoc();
@@ -436,6 +478,11 @@ if ($action === 'update_return_status') {
 
     if (!$currentReturn) {
         redirect_with_message('../../modules/inventory/supplier_returns.php', 'Return record not found.', 'error');
+    }
+
+    // Force resolution to shift status to "resolved" automatically
+    if (in_array($resolutionType, ['replace', 'credit_memo'], true)) {
+        $nextStatus = 'resolved';
     }
 
     $oldStatus = $currentReturn['status'];
@@ -473,7 +520,7 @@ if ($action === 'update_return_status') {
             WHERE return_id = ?
         ');
         $updateReturn->bind_param(
-            'ssssiiis',
+            'sssisii',
             $nextStatus,
             $resolutionType,
             $resolvedAt,
@@ -503,9 +550,85 @@ if ($action === 'update_return_status') {
 
         $conn->commit();
 
+        // Additional actions for valid resolution (Replace or Credit Memo) 
+        // to prevent double execution, only do this if it wasn't the resolution already
+        if ($oldResolution !== $resolutionType && $resolutionType !== 'pending') {
+            $conn->begin_transaction();
+            try {
+                $qty = (int)$currentReturn['rejected_qty'];
+                $sId = (int)$currentReturn['supplier_id'];
+                $pId = (int)$currentReturn['product_id'];
+                
+                if ($resolutionType === 'replace') {
+                    // Create a new PO for replacement stock
+                    $repSuffix = '-REP-' . rand(100, 999);
+                    $newPoNum = 'REP' . date('YmdH') . rand(10, 99);
+                    
+                    // Total cost for replacement is logically 0 since it's a replace,
+                    // but for PO structural integrity we can carry over the price.
+                    // However, we won't charge them again (so grand_total = 0 to denote free replacement)
+                    // Or we just insert the item and ignore the 0 cost for tracking. We'll set lines total = 0.
+                    $insertPO = $conn->prepare("
+                        INSERT INTO purchase_orders 
+                        (po_number, supplier_id, status, order_date, subtotal, tax_amount, grand_total, notes, created_by, approved_by, approved_at) 
+                        VALUES (?, ?, 'approved', CURRENT_DATE, 0, 0, 0, 'Auto-generated replacement PO', ?, ?, NOW())
+                    ");
+                    $insertPO->bind_param('siii', $newPoNum, $sId, $userId, $userId);
+                    $insertPO->execute();
+                    $newPoId = $insertPO->insert_id;
+                    $insertPO->close();
+                    
+                    // Insert the item
+                    $oType = $currentReturn['order_type'] ?? 'retail';
+                    $bQty  = (int)($currentReturn['box_quantity'] ?? 0);
+                    $uCost = 0; // Free replacement
+                    $newLineTotal = 0;
+                    
+                    $insertItem = $conn->prepare("
+                        INSERT INTO purchase_order_items 
+                        (po_id, product_id, ordered_qty, order_type, box_quantity, unit_cost, line_total) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $insertItem->bind_param('iiisidd', $newPoId, $pId, $qty, $oType, $bQty, $uCost, $newLineTotal);
+                    $insertItem->execute();
+                    $insertItem->close();
+
+                    // Link replacement PO to the return record
+                    $conn->query("UPDATE supplier_returns SET replacement_po_id = {$newPoId} WHERE return_id = {$returnId}");
+                    
+                } elseif ($resolutionType === 'credit_memo') {
+                    $uCost = (float)($currentReturn['unit_cost'] ?? 0);
+                    $creditAmount = $qty * $uCost;
+                    
+                    // Check if table column supplier_credit_logs exists, else gracefully skip
+                    $conn->query("UPDATE suppliers SET credit_balance = credit_balance + {$creditAmount} WHERE supplier_id = {$sId}");
+                    
+                    if (table_exists($conn, 'supplier_credit_logs')) {
+                        $logCredit = $conn->prepare("
+                            INSERT INTO supplier_credit_logs (supplier_id, return_id, amount, action, notes) 
+                            VALUES (?, ?, ?, 'credit_added', 'Credit Memo generated from return')
+                        ");
+                        $logCredit->bind_param('iid', $sId, $returnId, $creditAmount);
+                        $logCredit->execute();
+                        $logCredit->close();
+                    }
+
+                    // Log the credit memo amount in the return
+                    $conn->query("UPDATE supplier_returns SET credit_memo_amount = {$creditAmount} WHERE return_id = {$returnId}");
+                }
+                
+                $conn->commit();
+            } catch (Throwable $e) {
+                $conn->rollback();
+                // We don't abort completely because the main return status was updated
+                error_log('Failed applying replacement or credit memo: ' . $e->getMessage());
+            }
+        }
+
         $message = "Supplier return updated. Status: {$nextStatus}";
         if ($resolutionType !== 'pending') {
-            $message .= ", Resolution: {$resolutionType}";
+            $formattedResolution = ucwords(str_replace('_', ' ', $resolutionType));
+            $message .= ", Resolution: {$formattedResolution}";
         }
         redirect_with_message('../../modules/inventory/supplier_returns.php', $message);
     } catch (Throwable $e) {
