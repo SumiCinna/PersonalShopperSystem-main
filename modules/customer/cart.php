@@ -76,10 +76,10 @@ require_once '../../includes/customer_header.php';
                     </div>
                     <ul class="divide-y divide-gray-200">
                         <?php foreach ($cart_items as $item): ?>
-                            <li class="p-6 flex flex-col sm:flex-row items-center hover:bg-gray-50 transition">
+                            <li id="cart-item-<?php echo $item['cart_id']; ?>" class="p-6 flex flex-col sm:flex-row items-center hover:bg-gray-50 transition">
                                 
                                 <div class="mr-4 flex-shrink-0">
-                                    <input type="checkbox" name="selected_cart_ids[]" value="<?php echo $item['cart_id']; ?>" class="item-checkbox w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" data-price="<?php echo $item['final_price']; ?>" data-qty="<?php echo $item['quantity']; ?>" onchange="updateTotal()" checked>
+                                    <input type="checkbox" name="selected_cart_ids[]" value="<?php echo $item['cart_id']; ?>" id="checkbox-<?php echo $item['cart_id']; ?>" class="item-checkbox w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" data-price="<?php echo $item['final_price']; ?>" data-qty="<?php echo $item['quantity']; ?>" onchange="updateTotal()" checked>
                                 </div>
 
                                 <div class="w-24 h-24 flex-shrink-0 bg-gray-100 rounded-lg flex items-center justify-center p-2 mb-4 sm:mb-0">
@@ -105,16 +105,16 @@ require_once '../../includes/customer_header.php';
                                 <div class="mt-4 sm:mt-0 sm:ml-6 flex flex-col items-center sm:items-end space-y-3">
                                     
                                     <div class="flex items-center border border-gray-300 rounded-lg">
-                                        <button type="button" onclick="updateCart(<?php echo $item['cart_id']; ?>, 'decrease')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-l-lg transition" <?php echo $item['quantity'] <= 1 ? 'disabled' : ''; ?>>-</button>
+                                        <button type="button" id="btn-decrease-<?php echo $item['cart_id']; ?>" onclick="updateCart(<?php echo $item['cart_id']; ?>, 'decrease')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-l-lg transition" <?php echo $item['quantity'] <= 1 ? 'disabled' : ''; ?>>-</button>
                                         
-                                        <input type="text" readonly value="<?php echo $item['quantity']; ?>" class="w-12 text-center text-sm font-semibold border-x border-gray-300 py-1 bg-white">
+                                        <input type="text" id="qty-<?php echo $item['cart_id']; ?>" readonly value="<?php echo $item['quantity']; ?>" class="w-12 text-center text-sm font-semibold border-x border-gray-300 py-1 bg-white">
                                         
-                                        <button type="button" onclick="updateCart(<?php echo $item['cart_id']; ?>, 'increase')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-r-lg transition">+</button>
+                                        <button type="button" id="btn-increase-<?php echo $item['cart_id']; ?>" onclick="updateCart(<?php echo $item['cart_id']; ?>, 'increase')" class="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded-r-lg transition">+</button>
                                     </div>
                                     
-                                    <p class="text-sm font-bold text-gray-900">Total: ₱<?php echo number_format($item['final_price'] * $item['quantity'], 2); ?></p>
+                                    <p class="text-sm font-bold text-gray-900">Total: <span id="item-total-<?php echo $item['cart_id']; ?>">₱<?php echo number_format($item['final_price'] * $item['quantity'], 2); ?></span></p>
 
-                                    <button type="button" onclick="removeItem(<?php echo $item['cart_id']; ?>)" class="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center transition">
+                                    <button type="button" onclick="removeItem(<?php echo $item['cart_id']; ?>, '<?php echo addslashes(htmlspecialchars($item['name'])); ?>')" class="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center transition">
                                         <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                         Remove
                                     </button>
@@ -168,6 +168,36 @@ require_once '../../includes/customer_header.php';
         </form>
     <?php endif; ?>
 </main>
+
+<!-- Remove Item Confirmation Modal -->
+<div id="removeModal" class="relative z-50 hidden" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity"></div>
+    <div class="fixed inset-0 z-10 w-screen overflow-y-auto">
+        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+            <div class="relative transform overflow-hidden rounded-2xl bg-white text-left shadow-2xl transition-all sm:my-8 sm:w-full sm:max-w-md">
+                <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4 text-center sm:text-left">
+                    <div class="sm:flex sm:items-start">
+                        <div class="mx-auto flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-red-100 sm:mx-0 sm:h-12 sm:w-12">
+                            <svg class="h-8 w-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                        </div>
+                        <div class="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+                            <h3 class="text-xl font-black leading-6 text-gray-900 mb-2" id="modal-title">Remove Item?</h3>
+                            <div class="mt-2 text-center sm:text-left">
+                                <p class="text-sm text-gray-500">Are you sure you want to remove <span id="modal-item-name" class="font-bold text-gray-900">this item</span> from your cart? You can always add it back later.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-gray-50 px-4 py-4 sm:flex sm:flex-row-reverse sm:px-6 gap-3">
+                    <button type="button" onclick="confirmRemoval()" class="inline-flex w-full justify-center rounded-xl bg-red-600 px-6 py-3 text-sm font-bold text-white shadow-lg hover:bg-red-700 sm:w-auto transition-all active:scale-95">Yes, Remove Item</button>
+                    <button type="button" onclick="closeRemoveModal()" class="mt-3 inline-flex w-full justify-center rounded-xl bg-white px-6 py-3 text-sm font-bold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-100 sm:mt-0 sm:w-auto transition-all active:scale-95">Keep in Cart</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
     const VAT_RATE = 0.12;
@@ -262,7 +292,27 @@ require_once '../../includes/customer_header.php';
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                window.location.reload(); // Refresh to show new totals
+                // Update quantity display
+                const qtyInput = document.getElementById(`qty-${cartId}`);
+                const checkbox = document.getElementById(`checkbox-${cartId}`);
+                const itemTotal = document.getElementById(`item-total-${cartId}`);
+                const btnDecrease = document.getElementById(`btn-decrease-${cartId}`);
+                
+                if (qtyInput && checkbox && itemTotal) {
+                    qtyInput.value = data.new_qty;
+                    checkbox.dataset.qty = data.new_qty;
+                    
+                    const price = parseFloat(checkbox.dataset.price);
+                    const newTotal = price * data.new_qty;
+                    itemTotal.innerText = '₱' + newTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                    
+                    // Enable/disable decrease button
+                    if (btnDecrease) {
+                        btnDecrease.disabled = (data.new_qty <= 1);
+                    }
+                    
+                    updateTotal(); // Refresh order summary
+                }
             } else {
                 alert(data.message);
             }
@@ -270,24 +320,53 @@ require_once '../../includes/customer_header.php';
         .catch(error => console.error('Error:', error));
     }
 
+    let itemToRemove = null;
+
     // AJAX function to handle Remove Trash button
-    function removeItem(cartId) {
-        if (confirm("Remove this item from your cart?")) {
-            fetch('../../core/customer/remove_from_cart.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cart_id: cartId })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    window.location.reload();
-                } else {
-                    alert(data.message || 'Could not remove item.');
+    function removeItem(cartId, itemName) {
+        itemToRemove = cartId;
+        document.getElementById('modal-item-name').textContent = itemName;
+        document.getElementById('removeModal').classList.remove('hidden');
+    }
+
+    function closeRemoveModal() {
+        document.getElementById('removeModal').classList.add('hidden');
+        itemToRemove = null;
+    }
+
+    function confirmRemoval() {
+        if (!itemToRemove) return;
+        
+        const cartId = itemToRemove;
+        fetch('../../core/customer/remove_from_cart.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cart_id: cartId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const itemRow = document.getElementById(`cart-item-${cartId}`);
+                if (itemRow) {
+                    itemRow.remove();
+                    updateTotal();
+                    
+                    // Check if cart is now empty
+                    const remainingItems = document.querySelectorAll('.item-checkbox');
+                    if (remainingItems.length === 0) {
+                        window.location.reload(); 
+                    }
                 }
-            })
-            .catch(error => console.error('Error:', error));
-        }
+                closeRemoveModal();
+            } else {
+                alert(data.message || 'Could not remove item.');
+                closeRemoveModal();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            closeRemoveModal();
+        });
     }
 
     updateTotal();

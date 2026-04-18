@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id'])) {
         $update = $conn->prepare("UPDATE cart SET quantity = ? WHERE cart_id = ?");
         $update->bind_param("ii", $new_qty, $cart_id);
         $update->execute();
-        echo json_encode(['success' => true]);
+        echo json_encode(['success' => true, 'new_qty' => $new_qty]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Item not found.']);
     }
