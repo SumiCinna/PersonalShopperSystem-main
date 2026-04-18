@@ -61,7 +61,7 @@ require_once '../../includes/admin_header.php';
                             <div class="text-sm text-slate-600"><?php echo htmlspecialchars($staff['username']); ?></div>
                             <div class="text-xs text-slate-500 mt-1"><?php echo htmlspecialchars($staff['email']); ?></div>
                             <?php if (!empty($staff['mobile'])): ?>
-                                <div class="text-xs text-slate-500 mt-1">Tel: <?php echo htmlspecialchars($staff['mobile']); ?></div>
+                                <div class="text-xs text-slate-500 mt-1">Tel: +63 <?php echo ltrim($staff['mobile'], '0'); ?></div>
                             <?php endif; ?>
                         </td>
                         <td class="p-4">

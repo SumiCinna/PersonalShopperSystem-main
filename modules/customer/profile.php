@@ -31,9 +31,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 	if ($action === 'update_phone') {
 		$phone = trim($_POST['phone'] ?? '');
+		if (strlen($phone) === 10 && str_starts_with($phone, '9')) {
+			$phone = '0' . $phone;
+		}
 
 		if (!preg_match('/^09\d{9}$/', $phone)) {
-			profileRedirect('error', 'Please enter a valid mobile number (11 digits starting with 09).');
+			profileRedirect('error', 'Please enter a valid mobile number (10 digits starting with 9).');
 		}
 
 		$check_stmt = $conn->prepare('SELECT user_id FROM user_profiles WHERE mobile = ? AND user_id <> ? LIMIT 1');
@@ -217,13 +220,16 @@ require_once '../../includes/customer_header.php';
 
 					<div style="margin-bottom:0.35rem;">
 						<label for="phone" style="display:block; font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:#9ca3af; margin-bottom:0.35rem;">Phone Number</label>
-						<input type="tel" id="phone" name="phone" value="<?php echo htmlspecialchars($mobile_display); ?>"
-							pattern="09[0-9]{9}" maxlength="11" inputmode="numeric" required placeholder="09XXXXXXXXX"
-							style="width:100%; box-sizing:border-box; background:#fff; border:1px solid #d1d5db; border-radius:9px; padding:0.65rem 0.875rem; font-size:1rem; font-weight:600; color:#1f2937; outline:none; transition:border-color 0.15s, box-shadow 0.15s;"
-							onfocus="this.style.borderColor='#3b82f6';this.style.boxShadow='0 0 0 3px rgba(59,130,246,0.15)'"
-							onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'">
+						<div style="position:relative; display:flex; align-items:center;">
+							<span style="position:absolute; left:0.875rem; font-size:1rem; font-weight:700; color:#1f2937; pointer-events:none;">+63</span>
+							<input type="tel" id="phone" name="phone" value="<?php echo htmlspecialchars(ltrim($mobile_display, '0')); ?>"
+								pattern="9[0-9]{9}" maxlength="10" inputmode="numeric" required placeholder="9XXXXXXXXX"
+								style="width:100%; box-sizing:border-box; background:#fff; border:1px solid #d1d5db; border-radius:9px; padding:0.65rem 0.875rem 0.65rem 2.8rem; font-size:1rem; font-weight:600; color:#1f2937; outline:none; transition:border-color 0.15s, box-shadow 0.15s;"
+								onfocus="this.style.borderColor='#3b82f6';this.style.boxShadow='0 0 0 3px rgba(59,130,246,0.15)'"
+								onblur="this.style.borderColor='#d1d5db';this.style.boxShadow='none'">
+						</div>
 					</div>
-					<p style="font-size:0.8rem; color:#9ca3af; margin:0.3rem 0 1.1rem;">Format: 09XXXXXXXXX</p>
+					<p style="font-size:0.8rem; color:#9ca3af; margin:0.3rem 0 1.1rem;">Format: 9XXXXXXXXX</p>
 
 					<button type="submit"
 						style="width:100%; background:#2563eb; color:#fff; font-size:1rem; font-weight:700; padding:0.7rem 1rem; border:none; border-radius:9px; cursor:pointer; transition:background 0.15s;"
@@ -368,6 +374,10 @@ require_once '../../includes/customer_header.php';
 			newPassword?.reportValidity();
 			confirmPassword?.reportValidity();
 		}
+	document.getElementById('phone')?.addEventListener('input', function() {
+		let val = this.value.replace(/\D/g, '');
+		if (val.startsWith('0')) val = val.substring(1);
+		this.value = val.slice(0, 10);
 	});
 })();
 </script>
