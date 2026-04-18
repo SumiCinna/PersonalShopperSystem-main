@@ -354,10 +354,56 @@ body {
 .login-link { text-align: center; margin-top: 16px; font-size: .87rem; color: var(--muted); }
 .login-link a { color: var(--blue); text-decoration: none; font-weight: 500; }
 .login-link a:hover { text-decoration: underline; }
+/* Modal Styles */
+.modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,.5); overflow: auto; }
+.modal.show { display: block; animation: fadeIn .2s ease; }
+.modal-content {
+  background: var(--card); margin: 5% auto; padding: 0; max-width: 700px;
+  border-radius: 16px; box-shadow: 0 8px 60px rgba(0,0,0,.3);
+  max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;
+}
+.modal-header {
+  padding: 20px 24px; border-bottom: 1.5px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.modal-header h2 { font-family: 'DM Serif Display', serif; font-size: 1.3rem; color: var(--text); margin: 0; }
+.modal-close {
+  background: none; border: none; font-size: 1.8rem;
+  cursor: pointer; color: var(--muted); line-height: 1; padding: 0;
+}
+.modal-close:hover { color: var(--text); }
+.modal-body {
+  padding: 24px; overflow-y: auto; flex: 1; font-size: .9rem; line-height: 1.8; color: var(--text);
+}
+.modal-body h3 { font-size: 1rem; font-weight: 700; margin-top: 16px; margin-bottom: 8px; color: var(--blue-dark); }
+.modal-body h3:first-child { margin-top: 0; }
+.modal-body ol, .modal-body ul { margin: 10px 0 10px 20px; }
+.modal-body li { margin-bottom: 6px; }
+.modal-footer {
+  padding: 16px 24px; border-top: 1.5px solid var(--border);
+  display: flex; justify-content: flex-end; align-items: center; gap: 16px;
+}
+.modal-read-status {
+  font-size: .85rem; color: var(--muted); display: none; align-items: center; gap: 8px;
+}
+.modal-read-status.complete { color: var(--success); }
+.modal-read-status.complete::before { content: '✓'; font-weight: 700; }
+.modal-btn {
+  background: var(--blue); color: white; border: none; padding: 10px 20px;
+  border-radius: 8px; cursor: pointer; font-weight: 600; font-size: .9rem;
+  font-family: 'DM Sans', sans-serif; transition: background .2s;
+}
+.modal-btn:hover { background: var(--blue-dark); }
+.terms-link {
+  color: var(--blue); text-decoration: none; font-weight: 600; cursor: pointer;
+}
+.terms-link:hover { text-decoration: underline; }
 @media (max-width: 480px) {
   .card { padding: 26px 20px 30px; }
   .form-row { flex-direction: column; gap: 0; }
   .step-label { font-size: 0; }
+  .modal-content { width: 95%; margin: 20% auto; }
+  .modal-body { max-height: 60vh; }
 }
 </style>
 </head>
@@ -467,12 +513,12 @@ body {
         <div class="panel-title">Review &amp; confirm</div>
         <div class="review-box" id="review-box"></div>
         <div class="terms-box">
-          <strong>Terms &amp; Conditions</strong><br>
-          By creating an account, you agree to our Terms of Service and Privacy Policy. You consent to the collection and use of your personal data for order processing, account management, and personalised shopping assistance. Your data will not be sold to third parties. You must be at least 18 years old to register. Personal Shopper reserves the right to suspend accounts that violate our usage policies.
+          <strong>Terms &amp; Conditions and Privacy Policy</strong><br>
+          Please read and review our <span class="terms-link" onclick="openModal('termsModal')"><strong>Terms &amp; Conditions</strong></span> and <span class="terms-link" onclick="openModal('privacyModal')"><strong>Privacy Policy</strong></span> before creating your account. You must agree to both to proceed with registration.
         </div>
         <div class="check-row">
-          <input type="checkbox" id="terms">
-          <label for="terms">I have read and agree to the <strong>Terms &amp; Conditions</strong> and <strong>Privacy Policy</strong>.</label>
+          <input type="checkbox" id="terms" disabled>
+          <label for="terms">I have read and agree to the <span class="terms-link" onclick="openModal('termsModal')">Terms &amp; Conditions</span> and <span class="terms-link" onclick="openModal('privacyModal')">Privacy Policy</span>.</label>
         </div>
         <div class="err-msg" id="err-terms" style="margin-bottom:10px;"></div>
         <div class="btn-row">
@@ -506,6 +552,125 @@ body {
       Already have an account? <a href="login.php">Sign in</a>
     </div>
   </div>
+
+  <!-- Terms & Conditions Modal -->
+  <div id="termsModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Terms &amp; Conditions</h2>
+        <button class="modal-close" onclick="closeModal('termsModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <h3>1. Acceptance of Terms</h3>
+        <p>By clicking "Create Account" or accessing our services, you expressly acknowledge that you have read, understood, and agreed to be bound by these Terms of Service and our Privacy Policy. If you do not agree to these terms, you may not create an account or use our services.</p>
+
+        <h3>2. Eligibility</h3>
+        <p>You must be at least 18 years of age to register for an account. By creating an account, you represent and warrant that you meet this age requirement and have the legal capacity to enter into this agreement.</p>
+
+        <h3>3. Privacy and Data Usage</h3>
+        <p>Your privacy is our priority. By creating an account, you consent to the collection, processing, and use of your personal data for the following purposes:</p>
+        <ul>
+          <li><strong>Order Processing:</strong> To facilitate the purchase and delivery of products.</li>
+          <li><strong>Account Management:</strong> To maintain your profile, order history, and account settings.</li>
+          <li><strong>Order Pick-up Validation:</strong> To ensure secure handovers and prevent fraud, we collect and verify necessary identification details or order confirmation codes when you choose to pick up your purchases in person.</li>
+          <li><strong>No-Sale Policy:</strong> We guarantee that your personal data will not be sold to third parties. Any sharing of data with service providers (e.g., payment processors) is done solely to facilitate the services you have requested.</li>
+          <li><strong>Communication &amp; Notifications:</strong> By providing your email address and mobile number, you consent to receive communications from Personal Shopper. This includes receiving email verification codes to ensure account security, as well as SMS notifications regarding your order status, such as pick-up dates, designated time slots, and location details.</li>
+        </ul>
+
+        <h3>4. User Responsibility</h3>
+        <p>You are solely responsible for maintaining the confidentiality of your account credentials (username and password) and for all activities that occur under your account. You agree to notify us immediately of any unauthorized use of your account.</p>
+
+        <h3>5. Modifications</h3>
+        <p>We may update these terms from time to time to reflect changes in our services or legal requirements. Your continued use of the account following the posting of changes constitutes your acceptance of such changes.</p>
+
+        <h3>6. Order Requirements</h3>
+        <p>All orders placed through the Personal Shopper platform must meet a minimum purchase value of 300 PHP. Orders that do not meet this minimum threshold will not be eligible for processing or checkout.</p>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-read-status" id="termsReadStatus">Scroll to read</div>
+        <div style="width:150px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+          <div id="termsProgressBar" style="width:0%;height:100%;background:var(--blue);transition:width .3s ease;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Privacy Policy Modal -->
+  <div id="privacyModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Privacy Policy</h2>
+        <button class="modal-close" onclick="closeModal('privacyModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p><strong>Effective Date:</strong> April 18, 2026</p>
+
+        <h3>1. Introduction</h3>
+        <p>Welcome to Personal Shopper. We are committed to protecting your personal information and your right to privacy. This Privacy Policy explains how we collect, use, and safeguard your data when you create an account or use our services. By using Personal Shopper, you agree to the collection and use of information in accordance with this policy.</p>
+
+        <h3>2. Information We Collect</h3>
+        <p>We collect the following personal information when you register and use our platform:</p>
+        <ul>
+          <li>Full name and contact details (email address, mobile number)</li>
+          <li>Account credentials (username and password)</li>
+          <li>Order history and purchase records</li>
+          <li>Identification details or order confirmation codes for in-person pick-up validation</li>
+          <li>Payment information (processed through trusted third-party payment processors)</li>
+        </ul>
+
+        <h3>3. How We Use Your Information</h3>
+        <p>Your personal data is used strictly for the following purposes:</p>
+        <ul>
+          <li><strong>Order Processing</strong> — To facilitate the purchase, payment, and delivery of your orders.</li>
+          <li><strong>Account Management</strong> — To maintain your profile, order history, and account settings.</li>
+          <li><strong>Pick-up Validation</strong> — To verify your identity and ensure secure, fraud-free in-person handovers.</li>
+          <li><strong>Security</strong> — To send email verification codes and protect your account from unauthorized access.</li>
+          <li><strong>Order Notifications</strong> — To send SMS and email updates regarding your order status, pick-up schedules, time slots, and location details.</li>
+        </ul>
+
+        <h3>4. How We Share Your Information</h3>
+        <p>We do not sell your personal data to any third parties. Your information may be shared only with trusted service providers (such as payment processors and logistics partners) solely to fulfill the services you have requested. These parties are contractually obligated to handle your data securely and confidentially.</p>
+
+        <h3>5. Data Retention</h3>
+        <p>We retain your personal information for as long as your account remains active or as necessary to provide our services. You may request deletion of your account and associated data at any time by contacting our support team.</p>
+
+        <h3>6. Your Rights</h3>
+        <p>You have the right to:</p>
+        <ul>
+          <li>Access the personal data we hold about you</li>
+          <li>Request correction of inaccurate or incomplete information</li>
+          <li>Request deletion of your personal data, subject to legal obligations</li>
+          <li>Withdraw consent to data processing at any time (note: this may affect your ability to use certain services)</li>
+        </ul>
+
+        <h3>7. Data Security</h3>
+        <p>We implement appropriate technical and organizational security measures to protect your personal data against unauthorized access, alteration, disclosure, or destruction. However, no method of transmission over the internet is 100% secure, and we cannot guarantee absolute security.</p>
+
+        <h3>8. Communications and Notifications</h3>
+        <p>By providing your email address and mobile number, you consent to receive:</p>
+        <ul>
+          <li>Email communications including verification codes and account-related notices</li>
+          <li>SMS notifications regarding order status, pick-up dates, time slots, and location information</li>
+        </ul>
+        <p>You may opt out of non-essential communications at any time by contacting us.</p>
+
+        <h3>9. Eligibility</h3>
+        <p>Our services are intended for users who are 18 years of age or older. We do not knowingly collect personal information from minors. If we become aware that a minor has provided us with personal data, we will take steps to delete such information.</p>
+
+        <h3>10. Changes to This Policy</h3>
+        <p>We may update this Privacy Policy from time to time to reflect changes in our services or applicable laws. We will notify you of significant changes via email or through a notice on our platform. Your continued use of Personal Shopper following any changes constitutes your acceptance of the updated policy.</p>
+
+        <h3>11. Contact Us</h3>
+        <p>If you have any questions, concerns, or requests regarding this Privacy Policy or your personal data, please contact us at: <strong>personalshoppersystem@gmail.com</strong></p>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-read-status" id="privacyReadStatus">Scroll to read</div>
+        <div style="width:150px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+          <div id="privacyProgressBar" style="width:0%;height:100%;background:var(--blue);transition:width .3s ease;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -513,7 +678,83 @@ var currentStep = 1;
 var registeredUserId = null;
 var registeredEmail  = '';
 var LETTERS_ONLY = /^[a-zA-Z\s\-'\.]+$/;
+var termsRead = false;
+var privacyRead = false;
+
 function v(id) { return document.getElementById(id); }
+
+// Modal Functions
+function openModal(modalId) {
+  v(modalId).classList.add('show');
+  document.body.style.overflow = 'hidden';
+  
+  // Add scroll listener when modal opens
+  setTimeout(function() {
+    var modal = v(modalId);
+    var body = modal.querySelector('.modal-body');
+    if (body) {
+      body.addEventListener('scroll', function() { handleModalScroll(modalId); });
+    }
+  }, 100);
+}
+
+function closeModal(modalId) {
+  v(modalId).classList.remove('show');
+  document.body.style.overflow = 'auto';
+}
+
+function handleModalScroll(modalId) {
+  var modal = v(modalId);
+  var body = modal.querySelector('.modal-body');
+  
+  if (!body) return;
+  
+  var scrollProgress = (body.scrollTop / (body.scrollHeight - body.clientHeight)) * 100;
+  scrollProgress = Math.min(scrollProgress, 100);
+  
+  var type = modalId === 'termsModal' ? 'terms' : 'privacy';
+  var progressBar = v(type === 'terms' ? 'termsProgressBar' : 'privacyProgressBar');
+  var statusEl = v(type === 'terms' ? 'termsReadStatus' : 'privacyReadStatus');
+  
+  progressBar.style.width = scrollProgress + '%';
+  
+  // Mark as read when scrolled to 95% or bottom
+  if (scrollProgress >= 95) {
+    if (type === 'terms' && !termsRead) {
+      termsRead = true;
+      statusEl.textContent = '✓ Read';
+      statusEl.classList.add('complete');
+      updateCheckboxState();
+    } else if (type === 'privacy' && !privacyRead) {
+      privacyRead = true;
+      statusEl.textContent = '✓ Read';
+      statusEl.classList.add('complete');
+      updateCheckboxState();
+    }
+  }
+}
+
+function updateCheckboxState() {
+  var termsCheckbox = v('terms');
+  if (termsRead && privacyRead) {
+    termsCheckbox.disabled = false;
+  } else {
+    termsCheckbox.disabled = true;
+    termsCheckbox.checked = false;
+  }
+}
+
+// Close modal when clicking outside of it
+window.onclick = function(event) {
+  var termsModal = v('termsModal');
+  var privacyModal = v('privacyModal');
+  if (event.target === termsModal) {
+    closeModal('termsModal');
+  }
+  if (event.target === privacyModal) {
+    closeModal('privacyModal');
+  }
+}
 
 function showErr(id, msg) {
   var el = v('err-' + id); if (!el) return;
