@@ -181,7 +181,7 @@ require_once '../../includes/inventory_header.php';
 <main class="flex-1 p-8 overflow-y-auto bg-slate-50">
     <div class="mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
-            <h1 class="text-3xl font-bold text-slate-900">Purchase Orders (PO) & Bar Orders (BO)</h1>
+            <h1 class="text-3xl font-bold text-slate-900">Purchase Orders (PO) & Bad Orders (BO)</h1>
             <p class="text-sm text-slate-500 mt-1">Create PO from low stock, track supplier flow, and quality check.</p>
         </div>
         <div class="flex gap-2">
