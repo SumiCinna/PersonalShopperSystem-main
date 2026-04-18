@@ -39,6 +39,14 @@ $stmt->execute();
 $order_items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
+// ── Calculate Breakdown ────────────────────────────────────────────────────────
+$derived_subtotal = 0;
+foreach ($order_items as $item) {
+    $derived_subtotal += $item['price_at_checkout'] * $item['quantity'];
+}
+$derived_vat         = round($derived_subtotal * 0.12, 2);
+$derived_service_fee = round($derived_subtotal * 0.10, 2);
+
 // ── Payment method display (fallback to Card) ─────────────────────────────────
 $payment_method_display = $order['payment_method'];
 if (!$payment_method_display || strtolower(trim($payment_method_display)) === 'unpaid' || trim($payment_method_display) === '') {
@@ -295,9 +303,19 @@ require_once '../../includes/customer_header.php';
                 <div class="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
                     <div class="divide-y divide-gray-200">
 
-                        <div class="amount-row flex justify-between items-center px-5 py-3">
-                            <span class="text-sm text-gray-600">Items Subtotal</span>
-                            <span class="amount-value font-semibold text-gray-800">₱<?php echo number_format($order['total_amount'], 2); ?></span>
+                        <div class="amount-row flex justify-between items-center px-5 py-2">
+                            <span class="text-sm text-gray-500">Items Subtotal</span>
+                            <span class="amount-value font-semibold text-gray-700">₱<?php echo number_format($derived_subtotal, 2); ?></span>
+                        </div>
+
+                        <div class="amount-row flex justify-between items-center px-5 py-2">
+                            <span class="text-sm text-gray-500">VAT (12%)</span>
+                            <span class="amount-value font-semibold text-gray-700">₱<?php echo number_format($derived_vat, 2); ?></span>
+                        </div>
+
+                        <div class="amount-row flex justify-between items-center px-5 py-2">
+                            <span class="text-sm text-gray-500">Service Fee (10%)</span>
+                            <span class="amount-value font-semibold text-gray-700">₱<?php echo number_format($derived_service_fee, 2); ?></span>
                         </div>
 
                         <div class="amount-row flex justify-between items-center px-5 py-3 bg-green-50">
@@ -326,8 +344,8 @@ require_once '../../includes/customer_header.php';
                         </div>
                         <?php endif; ?>
 
-                        <div class="amount-row flex justify-between items-center px-5 py-4 bg-white">
-                            <span class="text-base font-black text-gray-900">Order Total</span>
+                        <div class="amount-row flex justify-between items-center px-5 py-4 bg-white border-t border-gray-100">
+                            <span class="text-base font-black text-gray-900 uppercase tracking-wider">Grand Total</span>
                             <span class="amount-value text-2xl font-black text-blue-700">₱<?php echo number_format($order['total_amount'], 2); ?></span>
                         </div>
                     </div>

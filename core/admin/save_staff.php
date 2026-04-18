@@ -16,6 +16,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $suffix = trim($_POST['suffix'] ?? '');
     $email = trim($_POST['email']);
     $mobile = trim($_POST['mobile']);
+    if (strlen($mobile) === 10 && str_starts_with($mobile, '9')) {
+        $mobile = '0' . $mobile;
+    }
     $role = $_POST['role'];
     $password = $_POST['password'];
     

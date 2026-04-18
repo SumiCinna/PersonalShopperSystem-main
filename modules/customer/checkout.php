@@ -57,15 +57,15 @@ if (empty($cart_items)) {
 }
 
 $subtotal_amount = round($subtotal_amount, 2);
-if ($subtotal_amount < 300) {
-    $_SESSION['error'] = 'Minimum subtotal of ₱300.00 is required before checkout.';
-    header("Location: cart.php");
-    exit();
-}
-
 $vat_amount = round($subtotal_amount * $vat_rate, 2);
 $service_fee_amount = round($subtotal_amount * $service_fee_rate, 2);
 $total_amount = round($subtotal_amount + $vat_amount + $service_fee_amount, 2);
+
+if ($total_amount < 300) {
+    $_SESSION['error'] = 'Minimum grand total of ₱300.00 is required before checkout.';
+    header("Location: cart.php");
+    exit();
+}
 
 // --- MEAT & POULTRY: check if 1-2 hr window falls within store hours (10:00-19:00) ---
 $meat_blocked = false;

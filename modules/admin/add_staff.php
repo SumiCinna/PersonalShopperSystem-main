@@ -56,7 +56,10 @@ require_once '../../includes/admin_header.php';
                     </div>
                     <div>
                         <label class="block text-sm font-bold text-slate-700 mb-1">Mobile Number *</label>
-                        <input type="text" name="mobile" required pattern="09[0-9]{9}" maxlength="11" title="Please enter a valid 11-digit mobile number starting with 09" class="w-full bg-white border border-slate-300 text-slate-900 rounded focus:ring-blue-500 focus:border-blue-500 block p-3 font-bold" placeholder="09xxxxxxxxx">
+                        <div class="relative flex items-center">
+                            <span class="absolute left-3 font-bold text-slate-700">+63</span>
+                            <input type="text" name="mobile" id="mobile" required pattern="9[0-9]{9}" maxlength="10" title="Please enter a valid 10-digit mobile number starting with 9" class="w-full bg-white border border-slate-300 text-slate-900 rounded focus:ring-blue-500 focus:border-blue-500 block p-3 pl-12 font-bold" placeholder="9xxxxxxxxx">
+                        </div>
                     </div>
                 </div>
 
@@ -145,6 +148,12 @@ require_once '../../includes/admin_header.php';
     // Listen for typing or dropdown changes
     surnameInput.addEventListener('input', updateUsername);
     roleSelect.addEventListener('change', updateUsername);
+
+    document.getElementById('mobile').addEventListener('input', function() {
+        let val = this.value.replace(/\D/g, '');
+        if (val.startsWith('0')) val = val.substring(1);
+        this.value = val.slice(0, 10);
+    });
     
     // Run once on load
     updateUsername();

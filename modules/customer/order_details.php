@@ -42,6 +42,14 @@ $stmt->execute();
 $order_items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
+// ── Calculate Breakdown ────────────────────────────────────────────────────────
+$derived_subtotal = 0;
+foreach ($order_items as $item) {
+    $derived_subtotal += $item['price_at_checkout'] * $item['quantity'];
+}
+$derived_vat         = round($derived_subtotal * 0.12, 2);
+$derived_service_fee = round($derived_subtotal * 0.10, 2);
+
 // ── Payment Type Labels ───────────────────────────────────────────────────────
 $pt_labels = [
     'full'       => 'Full Payment',
@@ -210,12 +218,27 @@ function paymentStatusBadge($status) {
 
                 <!-- Amount Rows -->
                 <div class="space-y-2">
-                    <div class="flex justify-between items-center py-2.5 border-b border-gray-100">
+                    <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                        <p class="font-semibold text-gray-600 text-sm">Items Subtotal</p>
+                        <span class="text-sm font-bold text-gray-800">₱<?php echo number_format($derived_subtotal, 2); ?></span>
+                    </div>
+
+                    <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                        <p class="font-semibold text-gray-600 text-sm">VAT (12%)</p>
+                        <span class="text-sm font-bold text-gray-800">₱<?php echo number_format($derived_vat, 2); ?></span>
+                    </div>
+
+                    <div class="flex justify-between items-center py-2 border-b border-gray-100">
+                        <p class="font-semibold text-gray-600 text-sm">Service Fee (10%)</p>
+                        <span class="text-sm font-bold text-gray-800">₱<?php echo number_format($derived_service_fee, 2); ?></span>
+                    </div>
+
+                    <div class="flex justify-between items-center py-2.5 border-b border-gray-100 bg-blue-50 px-3 rounded-lg">
                         <div>
-                            <p class="font-semibold text-gray-800 text-sm">Order Total</p>
-                            <p class="text-xs text-gray-400">All items combined</p>
+                            <p class="font-bold text-blue-800 text-sm">Grand Total</p>
+                            <p class="text-xs text-blue-600">Total amount after fees</p>
                         </div>
-                        <span class="text-base font-black text-gray-900">₱<?php echo number_format($order['total_amount'], 2); ?></span>
+                        <span class="text-lg font-black text-blue-700">₱<?php echo number_format($order['total_amount'], 2); ?></span>
                     </div>
 
                     <div class="flex justify-between items-center py-2.5 border-b border-gray-100">
@@ -366,7 +389,19 @@ function paymentStatusBadge($status) {
                 </tbody>
                 <tfoot>
                     <tr class="bg-gray-50 border-t-2 border-gray-200">
-                        <td colspan="3" class="px-6 py-3 text-right font-black text-gray-700 text-sm uppercase tracking-wider">Order Total</td>
+                        <td colspan="3" class="px-6 py-2 text-right font-bold text-gray-600 text-xs uppercase">Items Subtotal</td>
+                        <td class="px-6 py-2 text-right font-bold text-gray-900 text-sm">₱<?php echo number_format($derived_subtotal, 2); ?></td>
+                    </tr>
+                    <tr class="bg-gray-50">
+                        <td colspan="3" class="px-6 py-2 text-right font-bold text-gray-600 text-xs uppercase">VAT (12%)</td>
+                        <td class="px-6 py-2 text-right font-bold text-gray-900 text-sm">₱<?php echo number_format($derived_vat, 2); ?></td>
+                    </tr>
+                    <tr class="bg-gray-50">
+                        <td colspan="3" class="px-6 py-2 text-right font-bold text-gray-600 text-xs uppercase">Service Fee (10%)</td>
+                        <td class="px-6 py-2 text-right font-bold text-gray-900 text-sm">₱<?php echo number_format($derived_service_fee, 2); ?></td>
+                    </tr>
+                    <tr class="bg-blue-50 border-t border-blue-100">
+                        <td colspan="3" class="px-6 py-3 text-right font-black text-blue-800 text-sm uppercase tracking-wider">Grand Total</td>
                         <td class="px-6 py-3 text-right font-black text-blue-700 text-base">₱<?php echo number_format($order['total_amount'], 2); ?></td>
                     </tr>
                     <?php if ($order['payment_status'] === 'paid'): ?>
@@ -402,8 +437,20 @@ function paymentStatusBadge($status) {
 
             <!-- Mobile Total Summary -->
             <div class="px-5 py-3 bg-gray-50 space-y-2">
-                <div class="flex justify-between font-bold text-gray-700 text-sm">
-                    <span>Order Total</span>
+                <div class="flex justify-between text-xs text-gray-500">
+                    <span>Subtotal</span>
+                    <span>₱<?php echo number_format($derived_subtotal, 2); ?></span>
+                </div>
+                <div class="flex justify-between text-xs text-gray-500">
+                    <span>VAT (12%)</span>
+                    <span>₱<?php echo number_format($derived_vat, 2); ?></span>
+                </div>
+                <div class="flex justify-between text-xs text-gray-500">
+                    <span>Service Fee (10%)</span>
+                    <span>₱<?php echo number_format($derived_service_fee, 2); ?></span>
+                </div>
+                <div class="flex justify-between font-black text-blue-700 text-sm pt-1 border-t border-dashed border-gray-300">
+                    <span>Grand Total</span>
                     <span>₱<?php echo number_format($order['total_amount'], 2); ?></span>
                 </div>
                 <?php if ($order['payment_status'] === 'paid'): ?>

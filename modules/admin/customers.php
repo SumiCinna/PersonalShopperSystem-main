@@ -98,7 +98,7 @@ require_once '../../includes/admin_header.php';
                             
                             <td class="p-4">
                                 <div class="text-sm font-semibold text-slate-700"><?php echo htmlspecialchars($customer['email']); ?></div>
-                                <div class="text-xs text-slate-500 mt-1"><?php echo htmlspecialchars($customer['mobile'] ?? 'No number'); ?></div>
+                                <div class="text-xs text-slate-500 mt-1"><?php echo $customer['mobile'] ? '+63 ' . ltrim($customer['mobile'], '0') : 'No number'; ?></div>
                             </td>
                             
                             <td class="p-4 text-center">

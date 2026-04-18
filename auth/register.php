@@ -279,6 +279,9 @@ body {
   transition: border-color .2s, box-shadow .2s; appearance: none;
 }
 .field input:focus, .field select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(45,91,227,.11); background: #fff; }
+.mobile-wrap { position: relative; display: flex; align-items: center; }
+.mobile-wrap .prefix { position: absolute; left: 13px; font-size: .93rem; font-weight: 600; color: var(--text); pointer-events: none; }
+.mobile-wrap input { padding-left: 45px !important; }
 .field input.invalid, .field select.invalid { border-color: var(--error); }
 .err-msg { font-size: .77rem; color: var(--error); margin-top: 4px; display: none; }
 .err-msg.show { display: block; }
@@ -464,7 +467,10 @@ body {
         </div>
         <div class="field">
           <label>Mobile Number <span class="req">*</span></label>
-          <input type="tel" id="mobile" placeholder="09xx xxx xxxx" maxlength="11" inputmode="numeric">
+          <div class="mobile-wrap">
+            <span class="prefix">+63</span>
+            <input type="tel" id="mobile" placeholder="9xx xxx xxxx" maxlength="10" inputmode="numeric">
+          </div>
           <div class="err-msg" id="err-mobile"></div>
         </div>
         <div class="btn-row">
@@ -810,7 +816,8 @@ v('password').addEventListener('input', function() {
 });
 v('mobile').addEventListener('input', function() {
   var val = this.value.replace(/\D/g, '');
-  this.value = val.slice(0, 11);
+  if (val.startsWith('0')) val = val.substring(1);
+  this.value = val.slice(0, 10);
 });
 
 function validateStep(n) {
@@ -827,7 +834,7 @@ function validateStep(n) {
     if (!sn)             { showErr('surname','Surname is required.'); ok = false; }
     else if (sn.length > 50)  { showErr('surname','Surname must not exceed 50 characters.'); ok = false; }
     else if (!LETTERS_ONLY.test(sn)) { showErr('surname','Surname can only contain letters.'); ok = false; }
-    if (!m || !/^09\d{9}$/.test(m)) { showErr('mobile','Enter valid mobile (09xx xxx xxxx).'); ok = false; }
+    if (!m || !/^9\d{9}$/.test(m)) { showErr('mobile','Enter 10 digits starting with 9.'); ok = false; }
     return ok;
   }
   if (n === 2) {
@@ -881,7 +888,7 @@ function buildReview() {
   var fullname = [fn, mn, sn, sf].filter(Boolean).join(' ');
   var rows = [
     ['Full Name', fullname],
-    ['Mobile',    v('mobile').value],
+    ['Mobile',    '+63 ' + v('mobile').value.trim()],
     ['Username',  v('username').value],
     ['Email',     v('email').value],
   ];
@@ -922,7 +929,7 @@ function submitForm() {
   fd.append('middlename',       v('middlename').value.trim());
   fd.append('surname',          v('surname').value.trim());
   fd.append('suffix',           v('suffix').value);
-  fd.append('mobile',           v('mobile').value.trim());
+  fd.append('mobile',           '0' + v('mobile').value.trim());
   fd.append('terms',            '1');
 
   fetch(window.location.href, { method: 'POST', body: fd })
