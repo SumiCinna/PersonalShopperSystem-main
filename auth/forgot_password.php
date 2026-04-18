@@ -9,7 +9,11 @@ if (!defined('EMAILJS_SERVICE_ID'))                define('EMAILJS_SERVICE_ID', 
 if (!defined('EMAILJS_PUBLIC_KEY'))                define('EMAILJS_PUBLIC_KEY',               'u4hgAipwQS-Q0NAg-');
 if (!defined('EMAILJS_PRIVATE_KEY'))               define('EMAILJS_PRIVATE_KEY',              'OC-tVKWiKvPS5XVEPWYa2');
 if (!defined('EMAILJS_TEMPLATE_FORGOT_PASSWORD'))  define('EMAILJS_TEMPLATE_FORGOT_PASSWORD', 'template_6ggz3iv');
-if (!defined('SITE_BASE_URL'))                     define('SITE_BASE_URL', 'http://localhost:3000/PersonalShopperSystem-main');
+if (!defined('SITE_BASE_URL')) {
+    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+    $host = $_SERVER['HTTP_HOST'];
+    define('SITE_BASE_URL', $protocol . $host);
+}
 
 // ─── Force Philippines timezone (UTC+8) ──────────────────────────────────────
 date_default_timezone_set('Asia/Manila');
