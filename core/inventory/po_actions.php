@@ -420,23 +420,100 @@ if ($action === 'receive_items') {
 if ($action === 'update_return_status') {
     $returnId = (int)($_POST['return_id'] ?? 0);
     $nextStatus = trim($_POST['next_status'] ?? '');
+    $resolutionType = trim($_POST['resolution_type'] ?? 'pending');
 
     $allowed = ['pending_return', 'returned_to_supplier', 'resolved'];
-    if ($returnId <= 0 || !in_array($nextStatus, $allowed, true)) {
-        redirect_with_message('../../modules/inventory/supplier_returns.php', 'Invalid return status update.', 'error');
+    $allowedResolutions = ['replace', 'credit_memo', 'pending'];
+    
+    if ($returnId <= 0 || !in_array($nextStatus, $allowed, true) || !in_array($resolutionType, $allowedResolutions, true)) {
+        redirect_with_message('../../modules/inventory/supplier_returns.php', 'Invalid return status or resolution update.', 'error');
     }
+
+    // Fetch current return to check status change
+    $fetchReturn = $conn->prepare('SELECT status, resolution_type FROM supplier_returns WHERE return_id = ? LIMIT 1');
+    $fetchReturn->bind_param('i', $returnId);
+    $fetchReturn->execute();
+    $currentReturn = $fetchReturn->get_result()->fetch_assoc();
+    $fetchReturn->close();
+
+    if (!$currentReturn) {
+        redirect_with_message('../../modules/inventory/supplier_returns.php', 'Return record not found.', 'error');
+    }
+
+    $oldStatus = $currentReturn['status'];
+    $oldResolution = $currentReturn['resolution_type'] ?? 'pending';
 
     $resolvedAt = null;
-    if ($nextStatus === 'resolved') {
+    $resolvedByUser = null;
+    $sentToSupplierAt = null;
+    $sentByUser = null;
+
+    // Set timestamps based on status transitions
+    if ($nextStatus === 'resolved' && $oldStatus !== 'resolved') {
         $resolvedAt = date('Y-m-d H:i:s');
+        $resolvedByUser = $userId;
+    }
+    
+    if ($nextStatus === 'returned_to_supplier' && $oldStatus !== 'returned_to_supplier') {
+        $sentToSupplierAt = date('Y-m-d H:i:s');
+        $sentByUser = $userId;
     }
 
-    $stmt = $conn->prepare('UPDATE supplier_returns SET status = ?, resolved_at = ? WHERE return_id = ?');
-    $stmt->bind_param('ssi', $nextStatus, $resolvedAt, $returnId);
-    $stmt->execute();
-    $stmt->close();
+    try {
+        $conn->begin_transaction();
 
-    redirect_with_message('../../modules/inventory/supplier_returns.php', 'Supplier return status updated.');
+        // Update supplier_returns with new status and resolution
+        $updateReturn = $conn->prepare('
+            UPDATE supplier_returns 
+            SET status = ?, 
+                resolution_type = ?,
+                resolved_at = COALESCE(?, resolved_at),
+                resolved_by_user = COALESCE(?, resolved_by_user),
+                sent_to_supplier_at = COALESCE(?, sent_to_supplier_at),
+                sent_by_user = COALESCE(?, sent_by_user),
+                updated_at = NOW()
+            WHERE return_id = ?
+        ');
+        $updateReturn->bind_param(
+            'ssssiiis',
+            $nextStatus,
+            $resolutionType,
+            $resolvedAt,
+            $resolvedByUser,
+            $sentToSupplierAt,
+            $sentByUser,
+            $returnId
+        );
+        $updateReturn->execute();
+        $updateReturn->close();
+
+        // Create audit trail entry (if schema exists)
+        if (table_exists($conn, 'supplier_return_updates')) {
+            $updateType = 'status_change';
+            if ($oldResolution !== $resolutionType) {
+                $updateType = 'resolution_set';
+            }
+
+            $insertUpdate = $conn->prepare('
+                INSERT INTO supplier_return_updates (return_id, old_status, new_status, update_type, updated_by)
+                VALUES (?, ?, ?, ?, ?)
+            ');
+            $insertUpdate->bind_param('isssi', $returnId, $oldStatus, $nextStatus, $updateType, $userId);
+            $insertUpdate->execute();
+            $insertUpdate->close();
+        }
+
+        $conn->commit();
+
+        $message = "Supplier return updated. Status: {$nextStatus}";
+        if ($resolutionType !== 'pending') {
+            $message .= ", Resolution: {$resolutionType}";
+        }
+        redirect_with_message('../../modules/inventory/supplier_returns.php', $message);
+    } catch (Throwable $e) {
+        $conn->rollback();
+        redirect_with_message('../../modules/inventory/supplier_returns.php', 'Failed to update return: ' . $e->getMessage(), 'error');
+    }
 }
 
 redirect_with_message('../../modules/inventory/purchase_orders.php', 'Unknown action requested.', 'error');
