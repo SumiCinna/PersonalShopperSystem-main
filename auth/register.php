@@ -519,13 +519,10 @@ body {
       <div class="panel" id="panel-3">
         <div class="panel-title">Review &amp; confirm</div>
         <div class="review-box" id="review-box"></div>
-        <div class="terms-box">
-          <strong>Terms &amp; Conditions and Privacy Policy</strong><br>
-          Please read and review our <span class="terms-link" onclick="openModal('termsModal')"><strong>Terms &amp; Conditions</strong></span> and <span class="terms-link" onclick="openModal('privacyModal')"><strong>Privacy Policy</strong></span> before creating your account. You must agree to both to proceed with registration.
-        </div>
+
         <div class="check-row">
-          <input type="checkbox" id="terms" disabled>
-          <label for="terms">I have read and agree to the <span class="terms-link" onclick="openModal('termsModal')">Terms &amp; Conditions</span> and <span class="terms-link" onclick="openModal('privacyModal')">Privacy Policy</span>.</label>
+          <input type="checkbox" id="terms" disabled style="pointer-events:none;">
+          <label>I have read and agree to the <span class="terms-link" onclick="openModal('termsModal')">Terms &amp; Conditions</span> and <span class="terms-link" onclick="openModal('privacyModal')">Privacy Policy</span>.</label>
         </div>
         <div class="err-msg" id="err-terms" style="margin-bottom:10px;"></div>        <div class="err-msg" id="err-not-read" style="margin-bottom:10px;background:#fff8f0;border-left:3px solid #f97316;padding:8px 12px;border-radius:4px;color:#f97316;display:none;">
           <strong>⚠ Please read both documents:</strong> You must scroll through the Terms &amp; Conditions and Privacy Policy before you can proceed.
@@ -595,7 +592,8 @@ body {
         <p>All orders placed through the Personal Shopper platform must meet a minimum purchase value of 300 PHP. Orders that do not meet this minimum threshold will not be eligible for processing or checkout.</p>
       </div>
       <div class="modal-footer">
-        <div class="modal-read-status" id="termsReadStatus">Scroll to read</div>
+        <div class="modal-read-status" id="termsReadStatus">Scroll to proceed</div>
+        <button type="button" id="proceedPrivacyBtn" class="modal-btn" disabled style="opacity: 0.5; cursor: not-allowed;" onclick="proceedToPrivacy()">Proceed to Privacy Policy</button>
         <div style="width:100%;height:4px;background:var(--border);border-radius:2px;overflow:hidden;position:absolute;bottom:0;left:0;">
           <div id="termsProgressBar" style="width:0%;height:100%;background:var(--blue);transition:width .3s ease;"></div>
         </div>
@@ -672,7 +670,8 @@ body {
         <p>If you have any questions, concerns, or requests regarding this Privacy Policy or your personal data, please contact us at: <strong>personalshoppersystem@gmail.com</strong></p>
       </div>
       <div class="modal-footer">
-        <div class="modal-read-status" id="privacyReadStatus">Scroll to read</div>
+        <div class="modal-read-status" id="privacyReadStatus">Scroll to agree</div>
+        <button type="button" id="agreeBtn" class="modal-btn" disabled style="opacity: 0.5; cursor: not-allowed;" onclick="agreeToBoth()">I agree with Terms & Conditions and Privacy Policy</button>
         <div style="width:100%;height:4px;background:var(--border);border-radius:2px;overflow:hidden;position:absolute;bottom:0;left:0;">
           <div id="privacyProgressBar" style="width:0%;height:100%;background:var(--blue);transition:width .3s ease;"></div>
         </div>
@@ -728,28 +727,48 @@ function handleModalScroll(modalId) {
   
   // Mark as read when scrolled to 95% or bottom
   if (scrollProgress >= 95) {
-    if (type === 'terms' && !termsRead) {
+    if (type === 'terms') {
       termsRead = true;
       statusEl.textContent = '✓ Read';
       statusEl.classList.add('complete');
-      updateCheckboxState();
-    } else if (type === 'privacy' && !privacyRead) {
+      var btn = v('proceedPrivacyBtn');
+      if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
+    } else if (type === 'privacy') {
       privacyRead = true;
       statusEl.textContent = '✓ Read';
       statusEl.classList.add('complete');
-      updateCheckboxState();
+      var pBtn = v('agreeBtn');
+      if (pBtn) { pBtn.disabled = false; pBtn.style.opacity = '1'; pBtn.style.cursor = 'pointer'; }
     }
   }
 }
 
-function updateCheckboxState() {
-  var termsCheckbox = v('terms');
-  if (termsRead && privacyRead) {
-    termsCheckbox.disabled = false;
-  } else {
-    termsCheckbox.disabled = true;
-    termsCheckbox.checked = false;
+function proceedToPrivacy() {
+  closeModal('termsModal');
+  openModal('privacyModal');
+}
+
+function agreeToBoth() {
+  if (!termsRead) {
+    alert("Please completely read the Terms & Conditions first.");
+    proceedToPrivacyToggleTerms();
+    return;
   }
+  if (termsRead && privacyRead) {
+    var termsCheckbox = v('terms');
+    termsCheckbox.checked = true;
+    termsCheckbox.disabled = false;
+    closeModal('privacyModal');
+  }
+}
+
+function proceedToPrivacyToggleTerms() {
+  closeModal('privacyModal');
+  openModal('termsModal');
+}
+
+function updateCheckboxState() {
+  // Checkbox is now strictly controlled by the button
 }
 
 // Add listener to checkbox to validate on attempt
