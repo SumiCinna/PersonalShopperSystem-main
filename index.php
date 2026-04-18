@@ -56,7 +56,7 @@ $new_arrivals_result = $conn->query($new_arrivals_query);
             <div class="hidden md:flex items-center space-x-8">
                 <a href="#features" class="text-sm font-semibold text-slate-600 hover:text-blue-600 transition">Features</a>
                 <a href="customer-login.php" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2.5 px-6 rounded-lg transition shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
-                    Login / Sign Up
+                    Login / Sign Up 
                 </a>
             </div>
         </div>

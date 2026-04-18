@@ -6,7 +6,9 @@ require_once '../../config/config.php';
 define('EMAILJS_SERVICE_ID',  'service_jl4ryyf');
 define('EMAILJS_TEMPLATE_ID', 'template_0ntsd08');
 define('EMAILJS_PUBLIC_KEY',  'u4hgAipwQS-Q0NAg-');
-define('SITE_BASE_URL',       'http://localhost:3000');
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+$host = $_SERVER['HTTP_HOST'];
+define('SITE_BASE_URL', $protocol . $host);
 
 header('Content-Type: application/json');
 
