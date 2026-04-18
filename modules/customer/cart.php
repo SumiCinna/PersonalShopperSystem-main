@@ -150,7 +150,7 @@ require_once '../../includes/customer_header.php';
                     </div>
 
                     <p id="minimumNotice" class="text-sm text-red-600 font-semibold mb-4 hidden">
-                        Minimum subtotal of ₱300.00 is required before checkout.
+                        Minimum grand total of ₱300.00 is required before checkout.
                     </p>
                     
                     <button type="submit" id="checkoutBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-4 rounded-lg flex justify-center items-center transition shadow-md">
@@ -214,10 +214,10 @@ require_once '../../includes/customer_header.php';
         // Disable checkout button if nothing selected or minimum subtotal not met
         const btn = document.getElementById('checkoutBtn');
         const minimumNotice = document.getElementById('minimumNotice');
-        if(count === 0 || subtotal < MINIMUM_SUBTOTAL) {
+        if(count === 0 || grandTotal < MINIMUM_SUBTOTAL) {
             btn.disabled = true;
             btn.classList.add('opacity-50', 'cursor-not-allowed');
-            if (count > 0 && subtotal < MINIMUM_SUBTOTAL) {
+            if (count > 0 && grandTotal < MINIMUM_SUBTOTAL) {
                 minimumNotice.classList.remove('hidden');
             } else {
                 minimumNotice.classList.add('hidden');
@@ -236,15 +236,19 @@ require_once '../../includes/customer_header.php';
             subtotal += parseFloat(cb.dataset.price) * parseInt(cb.dataset.qty);
         });
 
+        const vat = subtotal * VAT_RATE;
+        const serviceFee = subtotal * SERVICE_FEE_RATE;
+        const grandTotal = subtotal + vat + serviceFee;
+
         if (checked.length === 0) {
             event.preventDefault();
             alert('Please select at least one item to proceed to checkout.');
             return;
         }
 
-        if (subtotal < MINIMUM_SUBTOTAL) {
+        if (grandTotal < MINIMUM_SUBTOTAL) {
             event.preventDefault();
-            alert('Minimum subtotal of ₱300.00 is required before checkout.');
+            alert('Minimum grand total of ₱300.00 is required before checkout.');
         }
     });
 
