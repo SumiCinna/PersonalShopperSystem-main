@@ -130,6 +130,18 @@
                     <span class="font-medium">Inventory Audit</span>
                 </a>
 
+                <!-- Stock Management -->
+                <a href="stock_management.php"
+                   class="flex items-center gap-3 px-4 py-3 rounded-lg transition
+                          <?php echo (basename($_SERVER['PHP_SELF']) === 'stock_management.php')
+                                     ? 'bg-blue-600 text-white shadow-md'
+                                     : 'text-blue-100 hover:bg-blue-700 hover:text-white'; ?>">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                    </svg>
+                    <span class="font-medium">Stock Management</span>
+                </a>
+
             </div>
 
             <!-- Sign Out -->

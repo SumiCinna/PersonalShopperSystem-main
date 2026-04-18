@@ -81,7 +81,7 @@ $vat_amount = round($subtotal_amount * 0.12, 2);
 $service_fee_amount = round($subtotal_amount * 0.10, 2);
 $total_amount = round($subtotal_amount + $vat_amount + $service_fee_amount, 2);
 
-if ($total_amount < 300) {
+if ($total_amount < 0) {
     $_SESSION['error'] = 'Minimum grand total of ₱300.00 is required before checkout.';
     header("Location: ../../modules/customer/cart.php");
     exit();

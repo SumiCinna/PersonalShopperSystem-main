@@ -5,8 +5,8 @@ date_default_timezone_set('Asia/Manila');
 require_once '../../config/config.php';
 
 // ─── PayMongo Config ───────────────────────────────────────────────────────────
-define('PM_SECRET_KEY', 'sk_test_bg7ic4jq6oGSkDPeU5xeQFn5');
-define('PM_PUBLIC_KEY', 'pk_test_KRugwuNGnXVHLMg1bz7rjxbB');
+define('PM_SECRET_KEY', 'sk_live_rBTsJk46egiGgkUotLSbqr7c');
+define('PM_PUBLIC_KEY', 'pk_live_rgVrjUiMztGxTuqsCsZeKsrz');
 define('PM_BASE_URL',   'https://api.paymongo.com/v1');
 
 // ─── Helper ────────────────────────────────────────────────────────────────────
@@ -38,10 +38,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'customer') {
 $user_id = $_SESSION['user_id'];
 
 // ─── Load order ────────────────────────────────────────────────────────────────
-// Prioritize GET param, fallback to session — but ALWAYS validate against user_id
 $order_id = intval($_GET['order_id'] ?? 0);
 
-// If no order_id in GET, try session — but clear stale session if it doesn't match
 if (!$order_id && isset($_SESSION['pending_order_id'])) {
     $order_id = intval($_SESSION['pending_order_id']);
 }
@@ -59,22 +57,19 @@ $order = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
 if (!$order) {
-    // Order doesn't exist or doesn't belong to this user — clear stale session
     unset($_SESSION['pending_order_id']);
     header("Location: cart.php");
     exit();
 }
 
-// Keep session in sync with the validated order_id
 $_SESSION['pending_order_id'] = $order_id;
 
-// Already paid? Go to receipt
 if ($order['payment_status'] === 'paid') {
     header("Location: receipt.php?order_id=" . $order_id);
     exit();
 }
 
-// ─── Load order items (strictly by this order_id) ─────────────────────────────
+// ─── Load order items ──────────────────────────────────────────────────────────
 $stmt = $conn->prepare("
     SELECT oi.quantity, oi.price_at_checkout, p.name
     FROM order_items oi
@@ -100,113 +95,7 @@ $host       = $_SERVER['HTTP_HOST'];
 $dir_path   = rtrim(dirname($_SERVER['PHP_SELF']), '/');
 $return_url = $protocol . '://' . $host . $dir_path . '/payment_return.php?order_id=' . $order_id;
 
-// ─── Errors / messages ────────────────────────────────────────────────────────
 $payment_error = '';
-
-// ─── Handle GCash POST ─────────────────────────────────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gcash') {
-    $pm_response = pm_request('/payment_methods', 'POST', [
-        'data' => [
-            'attributes' => [
-                'type'    => 'gcash',
-                'billing' => [
-                    'name'  => $user_name,
-                    'email' => $user_email ?: 'customer@pss.com',
-                ],
-            ]
-        ]
-    ]);
-
-    if (isset($pm_response['errors'])) {
-        $payment_error = $pm_response['errors'][0]['detail'] ?? 'Could not initiate GCash. Please try again.';
-    } else {
-        $pm_id = $pm_response['data']['id'];
-
-        $attach = pm_request('/payment_intents/' . $payment_intent_id . '/attach', 'POST', [
-            'data' => [
-                'attributes' => [
-                    'payment_method' => $pm_id,
-                    'return_url'     => $return_url . '&method=gcash',
-                ]
-            ]
-        ]);
-
-        $status      = $attach['data']['attributes']['status'] ?? '';
-        $next_action = $attach['data']['attributes']['next_action'] ?? null;
-
-        if ($status === 'succeeded') {
-            $conn->query("UPDATE orders SET payment_status='paid', order_status='confirmed', payment_method='gcash' WHERE order_id=$order_id");
-            clearCartAndSession($conn, $user_id, $order_id);
-            header("Location: receipt.php?order_id=" . $order_id);
-            exit();
-        } elseif ($next_action && isset($next_action['redirect']['url'])) {
-            $_SESSION['payment_method_id'] = $pm_id;
-            header("Location: " . $next_action['redirect']['url']);
-            exit();
-        } else {
-            $payment_error = $attach['errors'][0]['detail'] ?? 'GCash payment could not be initiated.';
-        }
-    }
-}
-
-// ─── Handle Card POST ──────────────────────────────────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'card') {
-    $card_number = preg_replace('/\s+/', '', $_POST['card_number'] ?? '');
-    $exp_parts   = explode('/', $_POST['expiry'] ?? '/');
-    $exp_month   = (int)trim($exp_parts[0] ?? 0);
-    $exp_year    = (int)trim('20' . ($exp_parts[1] ?? 0));
-    $cvc         = trim($_POST['cvc'] ?? '');
-    $card_name   = trim($_POST['card_name'] ?? $user_name);
-
-    $pm_response = pm_request('/payment_methods', 'POST', [
-        'data' => [
-            'attributes' => [
-                'type'    => 'card',
-                'details' => [
-                    'card_number' => $card_number,
-                    'exp_month'   => $exp_month,
-                    'exp_year'    => $exp_year,
-                    'cvc'         => $cvc,
-                ],
-                'billing' => [
-                    'name'  => $card_name,
-                    'email' => $user_email ?: 'customer@pss.com',
-                ],
-            ]
-        ]
-    ]);
-
-    if (isset($pm_response['errors'])) {
-        $payment_error = $pm_response['errors'][0]['detail'] ?? 'Invalid card details. Please check and try again.';
-    } else {
-        $pm_id = $pm_response['data']['id'];
-
-        $attach = pm_request('/payment_intents/' . $payment_intent_id . '/attach', 'POST', [
-            'data' => [
-                'attributes' => [
-                    'payment_method' => $pm_id,
-                    'return_url'     => $return_url . '&method=card',
-                ]
-            ]
-        ]);
-
-        $status      = $attach['data']['attributes']['status'] ?? '';
-        $next_action = $attach['data']['attributes']['next_action'] ?? null;
-
-        if ($status === 'succeeded') {
-            $conn->query("UPDATE orders SET payment_status='paid', order_status='confirmed', payment_method='card' WHERE order_id=$order_id");
-            clearCartAndSession($conn, $user_id, $order_id);
-            header("Location: receipt.php?order_id=" . $order_id);
-            exit();
-        } elseif ($next_action && isset($next_action['redirect']['url'])) {
-            $_SESSION['payment_method_id'] = $pm_id;
-            header("Location: " . $next_action['redirect']['url']);
-            exit();
-        } else {
-            $payment_error = $attach['errors'][0]['detail'] ?? 'Payment failed. Try a different card.';
-        }
-    }
-}
 
 // ─── Helper: Clear cart + session after payment ────────────────────────────────
 function clearCartAndSession($conn, int $user_id, int $order_id): void {
@@ -220,8 +109,115 @@ function clearCartAndSession($conn, int $user_id, int $order_id): void {
         $_SESSION['payment_intent_id'],
         $_SESSION['payment_client_key'],
         $_SESSION['payment_selected_ids'],
-        $_SESSION['payment_method_id']
+        $_SESSION['payment_method_id'],
+        $_SESSION['qrph_source_id']
     );
+}
+
+// ─── Handle QRPh POST (create source) ─────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'qrph') {
+    $amount_cents = intval(round($amount_to_pay * 100));
+
+    $source_response = pm_request('/sources', 'POST', [
+        'data' => [
+            'attributes' => [
+                'amount'   => $amount_cents,
+                'currency' => 'PHP',
+                'type'     => 'qrph',
+                'redirect' => [
+                    'success' => $return_url . '&method=qrph',
+                    'failed'  => $return_url . '&method=qrph&status=failed',
+                ],
+                'billing'  => [
+                    'name'  => $user_name,
+                    'email' => $user_email ?: 'customer@pss.com',
+                ],
+            ]
+        ]
+    ]);
+
+    if (isset($source_response['errors'])) {
+        $payment_error = $source_response['errors'][0]['detail'] ?? 'Could not generate QR code. Please try again.';
+    } else {
+        $source_id   = $source_response['data']['id'] ?? '';
+        $qr_image    = $source_response['data']['attributes']['qr_image']   ?? '';
+        $qr_code_str = $source_response['data']['attributes']['qr_code_str'] ?? '';
+        $src_status  = $source_response['data']['attributes']['status']      ?? '';
+
+        if ($source_id) {
+            $_SESSION['qrph_source_id'] = $source_id;
+            // Return JSON for AJAX (JS will show QR modal)
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success'    => true,
+                'source_id'  => $source_id,
+                'qr_image'   => $qr_image,
+                'qr_code'    => $qr_code_str,
+                'status'     => $src_status,
+                'amount'     => number_format($amount_to_pay, 2),
+                'order_id'   => $order_id,
+            ]);
+            exit();
+        } else {
+            if ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '' === 'XMLHttpRequest') {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'error' => 'Failed to generate QR code.']);
+                exit();
+            }
+            $payment_error = 'Failed to generate QR code. Please try again.';
+        }
+    }
+}
+
+// ─── Handle QRPh status poll (AJAX) ───────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'poll_qrph') {
+    $source_id = $_GET['source_id'] ?? ($_SESSION['qrph_source_id'] ?? '');
+    if (!$source_id) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'unknown']);
+        exit();
+    }
+
+    $src = pm_request('/sources/' . $source_id);
+    $status = $src['data']['attributes']['status'] ?? 'pending';
+
+    // If paid, update the order
+    if ($status === 'chargeable' || $status === 'paid') {
+        // For QRPh sources, we need to create a payment to complete
+        if ($status === 'chargeable') {
+            $pay_response = pm_request('/payments', 'POST', [
+                'data' => [
+                    'attributes' => [
+                        'amount'      => intval(round($amount_to_pay * 100)),
+                        'currency'    => 'PHP',
+                        'source'      => [
+                            'id'   => $source_id,
+                            'type' => 'source',
+                        ],
+                        'description' => 'Order #' . $order_id,
+                    ]
+                ]
+            ]);
+            $pay_status = $pay_response['data']['attributes']['status'] ?? '';
+            if ($pay_status === 'paid') {
+                $conn->query("UPDATE orders SET payment_status='paid', order_status='confirmed', payment_method='qrph' WHERE order_id=$order_id");
+                clearCartAndSession($conn, $user_id, $order_id);
+                header('Content-Type: application/json');
+                echo json_encode(['status' => 'paid', 'redirect' => 'receipt.php?order_id=' . $order_id]);
+                exit();
+            }
+        } else {
+            $conn->query("UPDATE orders SET payment_status='paid', order_status='confirmed', payment_method='qrph' WHERE order_id=$order_id");
+            clearCartAndSession($conn, $user_id, $order_id);
+            header('Content-Type: application/json');
+            echo json_encode(['status' => 'paid', 'redirect' => 'receipt.php?order_id=' . $order_id]);
+            exit();
+        }
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode(['status' => $status]);
+    exit();
 }
 
 $page_title = 'Secure Payment';
@@ -248,22 +244,40 @@ require_once '../../includes/customer_header.php';
     }
     .pay-btn-shimmer:hover { animation: shimmer 1.5s linear infinite; }
 
-    .test-badge { background: repeating-linear-gradient(45deg,#fef08a 0,#fef08a 10px,#fde047 10px,#fde047 20px); }
+    /* QRPh Modal */
+    #qrph-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,0.75);
+        backdrop-filter: blur(4px);
+        z-index: 100;
+        align-items: center;
+        justify-content: center;
+    }
+    #qrph-modal.open { display: flex; }
+
+    @keyframes qr-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+        50%       { box-shadow: 0 0 0 12px rgba(59,130,246,0); }
+    }
+    .qr-box { animation: qr-pulse 2s ease-in-out infinite; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; }
+
+    .status-dot {
+        width: 10px; height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .status-dot.pending  { background: #f59e0b; animation: qr-pulse 1.5s infinite; }
+    .status-dot.paid     { background: #16a34a; }
+    .status-dot.expired  { background: #ef4444; }
 </style>
 
 <main class="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-10 px-4">
     <div class="max-w-5xl mx-auto">
-
-        <!-- Test Mode Banner -->
-        <div class="test-badge rounded-xl px-5 py-3 mb-6 flex items-center gap-3 border border-yellow-400">
-            <svg class="w-5 h-5 text-yellow-700 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-            </svg>
-            <div class="text-sm flex-1">
-                <span class="font-black text-yellow-800">🧪 TEST MODE ACTIVE</span>
-                <span class="text-yellow-700 block mt-1 text-xs">Use test card numbers from <a href="https://developers.paymongo.com/docs/testing" target="_blank" class="underline hover:text-yellow-900 font-semibold">PayMongo testing docs</a> to simulate payments</span>
-            </div>
-        </div>
 
         <div class="flex flex-col lg:flex-row gap-6">
 
@@ -315,155 +329,78 @@ require_once '../../includes/customer_header.php';
                             <?php endif; ?>
                         </div>
 
-                        <!-- Tab Buttons -->
-                        <div class="flex gap-3 mb-6">
-                            <button type="button" onclick="switchTab('gcash')" id="tab-gcash"
-                                class="pm-tab-btn active flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
-                                <svg class="w-5 h-5" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <rect width="40" height="40" rx="8" fill="currentColor" fill-opacity="0.15"/>
-                                    <text x="50%" y="60%" dominant-baseline="middle" text-anchor="middle" font-size="10" font-weight="900" fill="currentColor">G</text>
-                                </svg>
-                                GCash
-                            </button>
-                            <button type="button" onclick="switchTab('card')" id="tab-card"
-                                class="pm-tab-btn flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
-                                </svg>
-                                Credit / Debit Card
-                            </button>
-                        </div>
+                        <!-- ── QRPh Tab ─────────────────────────────────── -->
+                        <div id="panel-qrph" class="tab-panel active">
+                            <div class="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-6 text-center">
 
-                        <!-- ── GCash Tab ─────────────────────────────────── -->
-                        <div id="panel-gcash" class="tab-panel active">
-                            <div class="bg-blue-50 border border-blue-100 rounded-xl p-6 text-center">
-                                <div class="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-blue-600 text-white font-black text-3xl mb-4 shadow-lg">
-                                    G
+                                <!-- QRPh Branding -->
+                                <div class="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white border-2 border-blue-200 mb-4 shadow">
+                                    <svg class="w-12 h-12 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                            d="M3 3h6v6H3V3zm0 12h6v6H3v-6zm12-12h6v6h-6V3zm-1 12h2v2h-2v-2zm2 2h2v2h-2v-2zm-2 2h2v2h-2v-2zm4-4h2v2h-2v-2zm0 4h2v2h-2v-2zm-4 0h2v2h-2v-2z"/>
+                                    </svg>
                                 </div>
-                                <h3 class="font-black text-gray-800 text-lg mb-1">Pay with GCash</h3>
-                                <p class="text-sm text-gray-500 mb-6">You'll be redirected to the GCash payment page to complete your transaction.</p>
 
-                                <div class="bg-white rounded-lg p-4 border border-blue-200 mb-6 text-left">
-                                    <p class="text-xs text-gray-500 mb-1">Account</p>
+                                <h3 class="font-black text-gray-800 text-lg mb-1">Pay with QRPh</h3>
+                                <p class="text-sm text-gray-500 mb-2">
+                                    Scan the QR code using any Philippine bank app or e-wallet that supports QRPh (BPI, BDO, Metrobank, Unionbank, Maya, etc.)
+                                </p>
+
+                                <!-- Accepted banks -->
+                                <div class="flex flex-wrap justify-center gap-1.5 mb-5">
+                                    <?php
+                                    $banks = ['BPI', 'BDO', 'Metrobank', 'UnionBank', 'Maya', 'Landbank', 'DBP', 'PNB'];
+                                    foreach ($banks as $b):
+                                    ?>
+                                    <span class="text-xs bg-white border border-blue-200 text-blue-700 px-2 py-0.5 rounded-full font-semibold"><?php echo $b; ?></span>
+                                    <?php endforeach; ?>
+                                    <span class="text-xs bg-white border border-gray-200 text-gray-400 px-2 py-0.5 rounded-full">& more</span>
+                                </div>
+
+                                <!-- Account info -->
+                                <div class="bg-white rounded-lg p-4 border border-blue-100 mb-5 text-left">
+                                    <p class="text-xs text-gray-500 mb-1">Paying as</p>
                                     <p class="font-bold text-gray-800"><?php echo htmlspecialchars($user_name); ?></p>
                                     <?php if ($user_email): ?>
                                     <p class="text-sm text-gray-500"><?php echo htmlspecialchars($user_email); ?></p>
                                     <?php endif; ?>
                                 </div>
 
-                                <form method="POST" onsubmit="showLoading(this, 'Redirecting to GCash...')">
-                                    <input type="hidden" name="action" value="gcash">
-                                    <button type="submit" class="pay-btn-shimmer w-full bg-green-600 hover:bg-green-700 text-white font-black py-4 rounded-xl text-lg transition shadow-md flex items-center justify-center gap-3">
-                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
-                                        </svg>
-                                        Pay ₱<?php echo number_format($amount_to_pay, 2); ?> via GCash
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-
-                        <!-- ── Card Tab ──────────────────────────────────── -->
-                        <div id="panel-card" class="tab-panel">
-                            <form method="POST" id="cardForm" onsubmit="return validateCard(this)">
-                                <input type="hidden" name="action" value="card">
-
-                                <!-- Card Preview -->
-                                <div class="bg-gradient-to-br from-slate-700 to-slate-900 rounded-2xl p-5 mb-5 shadow-xl text-white relative overflow-hidden">
-                                    <div class="absolute top-0 right-0 w-40 h-40 bg-white opacity-5 rounded-full -mt-10 -mr-10"></div>
-                                    <div class="absolute bottom-0 left-0 w-32 h-32 bg-white opacity-5 rounded-full -mb-10 -ml-10"></div>
-                                    <div class="relative z-10">
-                                        <div class="flex justify-between items-start mb-6">
-                                            <svg class="w-10 h-10 opacity-80" viewBox="0 0 48 48" fill="none">
-                                                <rect x="2" y="8" width="44" height="32" rx="4" fill="white" fill-opacity=".2"/>
-                                                <circle cx="18" cy="24" r="8" fill="#ef4444" fill-opacity=".8"/>
-                                                <circle cx="30" cy="24" r="8" fill="#f59e0b" fill-opacity=".8"/>
-                                            </svg>
-                                            <span class="text-xs font-semibold opacity-60 uppercase tracking-widest">Credit Card</span>
+                                <!-- How it works steps -->
+                                <div class="bg-white rounded-lg border border-blue-100 p-4 mb-5 text-left">
+                                    <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">How it works</p>
+                                    <div class="space-y-2">
+                                        <div class="flex items-start gap-3 text-sm">
+                                            <span class="flex-shrink-0 w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-black">1</span>
+                                            <span class="text-gray-600">Click <strong>"Generate QR Code"</strong> below</span>
                                         </div>
-                                        <p class="font-mono text-xl tracking-[0.2em] mb-4 opacity-90" id="preview_number">•••• •••• •••• ••••</p>
-                                        <div class="flex justify-between text-xs opacity-70">
-                                            <div>
-                                                <p class="uppercase tracking-wider mb-0.5">Card Holder</p>
-                                                <p class="font-bold text-sm text-white opacity-90" id="preview_name">YOUR NAME</p>
-                                            </div>
-                                            <div class="text-right">
-                                                <p class="uppercase tracking-wider mb-0.5">Expires</p>
-                                                <p class="font-bold text-sm text-white opacity-90" id="preview_expiry">MM/YY</p>
-                                            </div>
+                                        <div class="flex items-start gap-3 text-sm">
+                                            <span class="flex-shrink-0 w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-black">2</span>
+                                            <span class="text-gray-600">Open your bank/e-wallet app and scan the QR code</span>
+                                        </div>
+                                        <div class="flex items-start gap-3 text-sm">
+                                            <span class="flex-shrink-0 w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-black">3</span>
+                                            <span class="text-gray-600">Confirm payment of <strong>₱<?php echo number_format($amount_to_pay, 2); ?></strong> in your app</span>
+                                        </div>
+                                        <div class="flex items-start gap-3 text-sm">
+                                            <span class="flex-shrink-0 w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-black">4</span>
+                                            <span class="text-gray-600">This page updates automatically once payment is confirmed</span>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Card Number -->
-                                <div class="mb-4">
-                                    <label class="block text-sm font-bold text-gray-700 mb-1">Card Number</label>
-                                    <input type="text" name="card_number" id="card_number" required
-                                        placeholder="1234 5678 9012 3456"
-                                        value="4343 4343 4343 4345"
-                                        maxlength="19"
-                                        inputmode="numeric"
-                                        autocomplete="cc-number"
-                                        class="card-input w-full bg-gray-50 border border-gray-300 rounded-xl p-4 text-lg outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                                        oninput="formatCardNumber(this)"
-                                        onkeyup="updateCardPreview()">
-                                </div>
-
-                                <!-- Name -->
-                                <div class="mb-4">
-                                    <label class="block text-sm font-bold text-gray-700 mb-1">Name on Card</label>
-                                    <input type="text" name="card_name" id="card_name" required
-                                        placeholder="JUAN DELA CRUZ"
-                                        value="TEST USER"
-                                        autocomplete="cc-name"
-                                        class="w-full bg-gray-50 border border-gray-300 rounded-xl p-4 outline-none focus:ring-2 focus:ring-blue-500 transition uppercase"
-                                        oninput="document.getElementById('preview_name').textContent = this.value.toUpperCase() || 'YOUR NAME'">
-                                </div>
-
-                                <!-- Expiry + CVC -->
-                                <div class="grid grid-cols-2 gap-4 mb-6">
-                                    <div>
-                                        <label class="block text-sm font-bold text-gray-700 mb-1">Expiry Date</label>
-                                        <input type="text" name="expiry" id="expiry" required
-                                            placeholder="MM/YY"
-                                            value="12/28"
-                                            maxlength="5"
-                                            inputmode="numeric"
-                                            autocomplete="cc-exp"
-                                            class="card-input w-full bg-gray-50 border border-gray-300 rounded-xl p-4 text-lg outline-none focus:ring-2 focus:ring-blue-500 transition"
-                                            oninput="formatExpiry(this)"
-                                            onkeyup="document.getElementById('preview_expiry').textContent = this.value || 'MM/YY'">
-                                    </div>
-                                    <div>
-                                        <label class="block text-sm font-bold text-gray-700 mb-1">CVC / CVV</label>
-                                        <input type="text" name="cvc" id="cvc" required
-                                            placeholder="•••"
-                                            value="111"
-                                            maxlength="4"
-                                            inputmode="numeric"
-                                            autocomplete="cc-csc"
-                                            class="card-input w-full bg-gray-50 border border-gray-300 rounded-xl p-4 text-lg outline-none focus:ring-2 focus:ring-blue-500 transition"
-                                            oninput="this.value = this.value.replace(/\D/g, '').slice(0, 4)">
-                                    </div>
-                                </div>
-
-                                <button type="submit" id="cardPayBtn"
-                                    class="pay-btn-shimmer w-full bg-green-600 text-white font-black py-4 rounded-xl text-lg transition shadow-md flex items-center justify-center gap-3">
+                                <!-- Generate QR Button -->
+                                <button type="button" id="qrph-generate-btn" onclick="generateQRPh()"
+                                    class="pay-btn-shimmer w-full bg-green-600 hover:bg-green-700 text-white font-black py-4 rounded-xl text-lg transition shadow-md flex items-center justify-center gap-3">
                                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M3 3h6v6H3V3zm0 12h6v6H3v-6zm12-12h6v6h-6V3zm-1 12h2v2h-2v-2zm2 2h2v2h-2v-2zm-2 2h2v2h-2v-2zm4-4h2v2h-2v-2zm0 4h2v2h-2v-2zm-4 0h2v2h-2v-2z"/>
                                     </svg>
-                                    Pay ₱<?php echo number_format($amount_to_pay, 2); ?> Securely
+                                    Generate QR Code - ₱<?php echo number_format($amount_to_pay, 2); ?>
                                 </button>
 
-                                <!-- Test card hint -->
-                                <div class="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
-                                    <strong>🧪 Test Card Only:</strong>
-                                    <span class="font-mono">4343 4343 4343 4345</span> ·
-                                    Exp: <span class="font-mono">12/28</span> ·
-                                    CVC: <span class="font-mono">111</span>
-                                    <p class="mt-2 text-xs text-yellow-700">⚠️ Only PayMongo test card numbers are accepted. Using other card numbers will result in an error.</p>
-                                </div>
-                            </form>
+                                <p class="text-xs text-gray-400 mt-3">QR code expires in <strong>10 minutes</strong>. Keep this page open.</p>
+                            </div>
                         </div>
 
                         <!-- Security note -->
@@ -491,7 +428,6 @@ require_once '../../includes/customer_header.php';
                         </span>
                     </h2>
 
-                    <!-- Items — now strictly from this order only -->
                     <div class="space-y-3 max-h-52 overflow-y-auto mb-4 pr-1">
                         <?php if (empty($order_items)): ?>
                             <p class="text-sm text-gray-400 text-center py-4">No items found for this order.</p>
@@ -543,7 +479,6 @@ require_once '../../includes/customer_header.php';
                         <?php endif; ?>
                     </div>
 
-                    <!-- Payment type badge -->
                     <div class="mt-4">
                         <?php
                         $pt_labels = ['full' => 'Full Payment', 'partial_50' => '50% Downpayment', 'partial_30' => '30% Downpayment'];
@@ -554,7 +489,6 @@ require_once '../../includes/customer_header.php';
                         </span>
                     </div>
 
-                    <!-- Back to cart link -->
                     <a href="cart.php" class="mt-5 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition justify-center">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
@@ -568,8 +502,102 @@ require_once '../../includes/customer_header.php';
     </div><!-- /max-w -->
 </main>
 
+<!-- ─── QRPh Modal ──────────────────────────────────────────────────────────── -->
+<div id="qrph-modal" role="dialog" aria-modal="true" aria-label="QRPh Payment">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+
+        <!-- Modal Header -->
+        <div class="bg-gradient-to-r from-blue-700 to-indigo-700 px-6 py-4 flex items-center gap-3">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 3h6v6H3V3zm0 12h6v6H3v-6zm12-12h6v6h-6V3zm-1 12h2v2h-2v-2zm2 2h2v2h-2v-2zm-2 2h2v2h-2v-2zm4-4h2v2h-2v-2zm0 4h2v2h-2v-2zm-4 0h2v2h-2v-2z"/>
+            </svg>
+            <div>
+                <p class="text-white font-black">Scan to Pay via QRPh</p>
+                <p class="text-blue-200 text-xs">Order #<?php echo $order_id; ?></p>
+            </div>
+            <button onclick="closeQRModal()" class="ml-auto text-blue-200 hover:text-white transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="p-6 text-center">
+
+            <!-- Status indicator -->
+            <div class="flex items-center justify-center gap-2 mb-4" id="qr-status-row">
+                <span class="status-dot pending" id="qr-status-dot"></span>
+                <span class="text-sm font-semibold text-gray-600" id="qr-status-text">Waiting for payment…</span>
+            </div>
+
+            <!-- QR Image Area -->
+            <div id="qr-loading" class="py-8 flex flex-col items-center gap-3">
+                <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full spin"></div>
+                <p class="text-sm text-gray-500">Generating QR code…</p>
+            </div>
+
+            <div id="qr-display" class="hidden">
+                <!-- Amount badge -->
+                <div class="inline-block bg-blue-600 text-white font-black text-xl px-6 py-2 rounded-full mb-4 shadow">
+                    ₱<span id="qr-amount"></span>
+                </div>
+
+                <!-- QR Code image -->
+                <div class="qr-box inline-block rounded-2xl overflow-hidden border-4 border-blue-200 mb-4">
+                    <img id="qr-img" src="" alt="QRPh QR Code" class="w-80 h-80 object-contain">
+                </div>
+
+                <!-- QR string fallback -->
+                <div id="qr-string-wrap" class="hidden bg-gray-50 rounded-lg p-3 mb-4 border border-gray-200">
+                    <p class="text-xs text-gray-500 mb-1">Or copy QR string:</p>
+                    <p class="font-mono text-xs text-gray-700 break-all select-all" id="qr-string-text"></p>
+                </div>
+
+                <p class="text-xs text-gray-500 mb-1">
+                    Open your bank / e-wallet app → Scan QR → Pay
+                </p>
+
+                <!-- Timer -->
+                <div class="flex items-center justify-center gap-1.5 text-xs text-amber-600 font-semibold mt-2" id="qr-timer-row">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    Expires in <span id="qr-countdown">60:00</span>
+                </div>
+            </div>
+
+            <!-- Success state -->
+            <div id="qr-success" class="hidden py-4">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                </div>
+                <p class="font-black text-green-700 text-lg mb-1">Payment Received!</p>
+                <p class="text-sm text-gray-500">Redirecting to your receipt…</p>
+            </div>
+
+            <!-- Expired state -->
+            <div id="qr-expired" class="hidden py-4">
+                <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <svg class="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+                <p class="font-black text-red-600 text-lg mb-1">QR Code Expired</p>
+                <p class="text-sm text-gray-500 mb-4">Please generate a new QR code to try again.</p>
+                <button onclick="closeQRModal()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">
+                    Generate New QR
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
 <!-- Loading Overlay -->
-<div id="loadingOverlay" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm z-50 hidden flex items-center justify-center">
+<div id="loadingOverlay" class="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-filter backdrop-blur-sm z-50 hidden flex items-center justify-center">
     <div class="bg-white rounded-2xl p-8 shadow-2xl flex flex-col items-center gap-4 max-w-xs mx-4">
         <div class="w-14 h-14 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
         <p class="font-bold text-gray-800 text-center" id="loadingText">Processing payment...</p>
@@ -578,6 +606,7 @@ require_once '../../includes/customer_header.php';
 </div>
 
 <script>
+    // ── Tab switching ──────────────────────────────────────────────────────────
     function switchTab(tab) {
         document.querySelectorAll('.pm-tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
@@ -585,69 +614,211 @@ require_once '../../includes/customer_header.php';
         document.getElementById('panel-' + tab).classList.add('active');
     }
 
+    // ── Card helpers ───────────────────────────────────────────────────────────
     function formatCardNumber(el) {
         let v = el.value.replace(/\D/g, '').slice(0, 16);
         el.value = v.match(/.{1,4}/g)?.join(' ') || v;
     }
-
     function formatExpiry(el) {
         let v = el.value.replace(/\D/g, '').slice(0, 4);
         if (v.length >= 3) v = v.slice(0, 2) + '/' + v.slice(2);
         el.value = v;
     }
-
     function updateCardPreview() {
         const num = document.getElementById('card_number').value || '';
         const padded = num.padEnd(19, '•').replace(/ /g, '').replace(/(.{4})/g, '$1 ').trim();
         document.getElementById('preview_number').textContent = padded || '•••• •••• •••• ••••';
     }
-
     function validateCard(form) {
         const num    = form.card_number.value.replace(/\s/g, '');
         const expiry = form.expiry.value;
         const cvc    = form.cvc.value;
-
-        if (num.length < 13) {
-            alert('Please enter a valid card number (at least 13 digits).');
-            return false;
-        }
-        if (!luhnCheck(num)) {
-            alert('Invalid card number. Please check and try again.');
-            return false;
-        }
-        if (!/^\d{2}\/\d{2}$/.test(expiry)) {
-            alert('Please enter expiry as MM/YY.');
-            return false;
-        }
-        if (cvc.length < 3) {
-            alert('Please enter a valid CVC (3-4 digits).');
-            return false;
-        }
-
+        if (num.length < 13) { alert('Please enter a valid card number (at least 13 digits).'); return false; }
+        if (!luhnCheck(num)) { alert('Invalid card number. Please check and try again.'); return false; }
+        if (!/^\d{2}\/\d{2}$/.test(expiry)) { alert('Please enter expiry as MM/YY.'); return false; }
+        if (cvc.length < 3) { alert('Please enter a valid CVC (3-4 digits).'); return false; }
         showLoading(form, 'Processing card payment...');
         return true;
     }
-
     function luhnCheck(num) {
-        let sum = 0;
-        let isEven = false;
+        let sum = 0, isEven = false;
         for (let i = num.length - 1; i >= 0; i--) {
-            let digit = parseInt(num.charAt(i), 10);
-            if (isEven) {
-                digit *= 2;
-                if (digit > 9) digit -= 9;
-            }
-            sum += digit;
-            isEven = !isEven;
+            let d = parseInt(num.charAt(i), 10);
+            if (isEven) { d *= 2; if (d > 9) d -= 9; }
+            sum += d; isEven = !isEven;
         }
         return (sum % 10) === 0;
     }
-
     function showLoading(form, msg) {
         document.getElementById('loadingText').textContent = msg || 'Processing...';
         document.getElementById('loadingOverlay').classList.remove('hidden');
         document.getElementById('loadingOverlay').classList.add('flex');
     }
+
+    // ── QRPh logic ─────────────────────────────────────────────────────────────
+    let pollInterval   = null;
+    let countdownTimer = null;
+    let currentSourceId = null;
+
+    function generateQRPh() {
+        // Open modal in loading state
+        openQRModal();
+
+        fetch('payment_qrph_ajax.php?action=create_qrph&order_id=<?php echo $order_id; ?>', {
+            method: 'POST',
+        })
+        .then(r => {
+            // Guard: make sure we actually got JSON back, not an HTML error page
+            const ct = r.headers.get('content-type') || '';
+            if (!ct.includes('application/json')) {
+                return r.text().then(txt => { throw new Error('Non-JSON response: ' + txt.slice(0, 200)); });
+            }
+            return r.json();
+        })
+        .then(data => {
+            if (data.success) {
+                currentSourceId = data.source_id;
+                showQRCode(data);
+                startPolling(data.source_id);
+                startCountdown(600); // 10 minutes expiry
+            } else {
+                closeQRModal();
+                alert(data.error || 'Failed to generate QR code. Please try again.');
+            }
+        })
+        .catch(err => {
+            closeQRModal();
+            alert('Error: ' + err.message);
+        });
+    }
+
+    function openQRModal() {
+        // Reset state
+        document.getElementById('qr-loading').classList.remove('hidden');
+        document.getElementById('qr-display').classList.add('hidden');
+        document.getElementById('qr-success').classList.add('hidden');
+        document.getElementById('qr-expired').classList.add('hidden');
+        document.getElementById('qr-status-row').classList.remove('hidden');
+        setStatusDot('pending', 'Waiting for payment…');
+
+        document.getElementById('qrph-modal').classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeQRModal() {
+        stopPolling();
+        stopCountdown();
+        document.getElementById('qrph-modal').classList.remove('open');
+        document.body.style.overflow = '';
+    }
+
+    function showQRCode(data) {
+        document.getElementById('qr-loading').classList.add('hidden');
+        document.getElementById('qr-display').classList.remove('hidden');
+        document.getElementById('qr-amount').textContent = data.amount;
+
+        const img = document.getElementById('qr-img');
+        // qr_image is a base64 data URI (data:image/png;base64,...)
+        if (data.qr_image) {
+            img.src = data.qr_image;
+            img.classList.remove('hidden');
+        } else {
+            img.classList.add('hidden');
+        }
+
+        // Show QR string fallback if no image
+        if (data.qr_string && !data.qr_image) {
+            document.getElementById('qr-string-text').textContent = data.qr_string;
+            document.getElementById('qr-string-wrap').classList.remove('hidden');
+        }
+    }
+
+    function setStatusDot(type, text) {
+        const dot  = document.getElementById('qr-status-dot');
+        const span = document.getElementById('qr-status-text');
+        dot.className = 'status-dot ' + type;
+        span.textContent = text;
+    }
+
+    function startPolling(sourceId) {
+        stopPolling();
+        // Poll every 3 seconds
+        pollInterval = setInterval(() => pollStatus(sourceId), 3000);
+    }
+
+    function stopPolling() {
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    }
+
+    function pollStatus(sourceId) {
+        fetch(`payment_qrph_ajax.php?action=poll_qrph&source_id=${encodeURIComponent(sourceId)}&order_id=<?php echo $order_id; ?>`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'paid') {
+                stopPolling();
+                stopCountdown();
+                showSuccess(data.redirect);
+            } else if (data.status === 'expired' || data.status === 'failed') {
+                stopPolling();
+                stopCountdown();
+                showExpired();
+            }
+            // 'pending' / 'awaiting_payment' — keep polling
+        })
+        .catch(() => { /* silent — keep polling */ });
+    }
+
+    function showSuccess(redirectUrl) {
+        document.getElementById('qr-display').classList.add('hidden');
+        document.getElementById('qr-status-row').classList.add('hidden');
+        document.getElementById('qr-success').classList.remove('hidden');
+        setStatusDot('paid', 'Payment confirmed!');
+
+        setTimeout(() => {
+            window.location.href = redirectUrl;
+        }, 2000);
+    }
+
+    function showExpired() {
+        document.getElementById('qr-display').classList.add('hidden');
+        document.getElementById('qr-status-row').classList.add('hidden');
+        document.getElementById('qr-expired').classList.remove('hidden');
+    }
+
+    function startCountdown(seconds) {
+        stopCountdown();
+        let remaining = seconds;
+        updateCountdownDisplay(remaining);
+
+        countdownTimer = setInterval(() => {
+            remaining--;
+            updateCountdownDisplay(remaining);
+            if (remaining <= 0) {
+                stopCountdown();
+                stopPolling();
+                showExpired();
+            }
+        }, 1000);
+    }
+
+    function stopCountdown() {
+        if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    }
+
+    function updateCountdownDisplay(secs) {
+        const m = Math.floor(secs / 60).toString().padStart(2, '0');
+        const s = (secs % 60).toString().padStart(2, '0');
+        const el = document.getElementById('qr-countdown');
+        if (el) el.textContent = `${m}:${s}`;
+        // Turn red in last 5 minutes
+        const timerRow = document.getElementById('qr-timer-row');
+        if (timerRow && secs < 300) timerRow.style.color = '#dc2626';
+    }
+
+    // Close modal on backdrop click
+    document.getElementById('qrph-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeQRModal();
+    });
 </script>
 
 <?php

@@ -58,6 +58,12 @@ if ($result->num_rows === 0) {
 $product = $result->fetch_assoc();
 $fetch_stmt->close();
 
+$batches_stmt = $conn->prepare("SELECT * FROM product_batches WHERE product_id = ? AND status = 'Released' AND remaining_quantity > 0 ORDER BY expiry_date ASC");
+$batches_stmt->bind_param("i", $product_id);
+$batches_stmt->execute();
+$active_batches = $batches_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$batches_stmt->close();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $sku                 = trim($_POST['sku']);
     $name                = trim($_POST['name']);
@@ -284,6 +290,34 @@ require_once '../../includes/inventory_header.php';
 
                 <div class="space-y-5">
                     <h3 class="text-lg font-bold text-blue-900 border-b pb-2">Pricing & Inventory</h3>
+
+                    <?php if (!empty($active_batches)): ?>
+                    <div class="col-span-2 mb-4 p-4 border border-blue-200 bg-blue-50 rounded-xl relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                        <h4 class="text-sm font-black text-blue-900 mb-3 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 11v9a2 2 0 01-2 2H7a2 2 0 01-2-2v-9m14 0h-4M5 11H1"></path></svg>
+                            Active Batches (FEFO Breakdown)
+                        </h4>
+                        <div class="space-y-2">
+                            <?php foreach($active_batches as $b): 
+                                $days_to_expire = (strtotime($b['expiry_date']) - time()) / 86400;
+                                $warning = '';
+                                if ($days_to_expire < 30 && $days_to_expire > 0) $warning = '<span class="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold ml-2 uppercase tracking-tight shadow-sm border border-amber-300">Near Expiry</span>';
+                                elseif ($days_to_expire <= 0) $warning = '<span class="text-[10px] bg-red-200 text-red-900 px-1.5 py-0.5 rounded font-bold ml-2 uppercase tracking-tight shadow-sm border border-red-300">Expired</span>';
+                            ?>
+                            <div class="text-[13px] text-slate-700 flex justify-between items-center bg-white px-3 py-2 rounded shadow-sm border border-blue-100">
+                                <div>
+                                    <span class="font-black text-blue-800 tabular-nums">&#10003; <?php echo $b['remaining_quantity']; ?> pcs</span> 
+                                    <span class="text-slate-400 mx-1">&mdash;</span> 
+                                    <span class="font-semibold">Exp: <?php echo date('M d, Y', strtotime($b['expiry_date'])); ?></span>
+                                    <?php echo $warning; ?>
+                                </div>
+                                <span class="text-[10px] text-slate-400 font-mono tracking-widest hidden sm:inline-block">BATCH #<?php echo $b['batch_number']; ?></span>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
 
                     <div class="grid grid-cols-2 gap-4">
                         <div>

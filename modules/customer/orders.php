@@ -104,13 +104,13 @@ function getStatusBadge($status) {
                                         <?php 
                                         $payment_method_display = $order['payment_method'];
                                         // Don't display "Pending" or "Unpaid" for the payment method
-                                        // Only show actual payment methods (Card, GCash, etc)
+                                        // Only show actual payment methods (QRPh)
                                         if (!$payment_method_display || strtolower($payment_method_display) === 'unpaid' || strtolower($payment_method_display) === 'pending') {
                                             $payment_method_display = '';
                                         }
                                         ?>
                                         <span class="text-sm font-medium text-gray-700 capitalize">
-                                            <?php echo $payment_method_display ? str_replace('_', ' ', htmlspecialchars($payment_method_display)) : 'Card'; ?>
+                                            <?php echo $payment_method_display ? str_replace('_', ' ', htmlspecialchars($payment_method_display)) : 'QRPh'; ?>
                                         </span>
                                         <?php if($order['payment_status'] === 'paid'): ?>
                                             <span class="text-xs text-green-600 font-bold flex items-center mt-0.5"><svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg> 
@@ -170,7 +170,7 @@ function getStatusBadge($status) {
                                     $payment_method_display = '';
                                 }
                                 ?>
-                                <span class="text-sm font-medium text-gray-700 capitalize block"><?php echo $payment_method_display ? str_replace('_', ' ', htmlspecialchars($payment_method_display)) : 'Card'; ?></span>
+                                <span class="text-sm font-medium text-gray-700 capitalize block"><?php echo $payment_method_display ? str_replace('_', ' ', htmlspecialchars($payment_method_display)) : 'QRPh'; ?></span>
                                 <?php if($order['payment_status'] === 'paid'): ?>
                                     <?php
                                     $paid_pct = match($order['payment_type']) {

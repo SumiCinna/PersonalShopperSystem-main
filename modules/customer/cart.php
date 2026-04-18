@@ -202,7 +202,7 @@ require_once '../../includes/customer_header.php';
 <script>
     const VAT_RATE = 0.12;
     const SERVICE_FEE_RATE = 0.10;
-    const MINIMUM_SUBTOTAL = 300;
+    const MINIMUM_SUBTOTAL = 0;
 
     function toggleAll(source) {
         const checkboxes = document.querySelectorAll('.item-checkbox');
