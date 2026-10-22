@@ -115,8 +115,8 @@ $pi_response = pm_request('/payment_intents', 'POST', [
     'data' => [
         'attributes' => [
             'amount'                 => $amount_centavos,
-            'payment_method_allowed' => ['gcash', 'card', 'paymaya'],
-            'payment_method_options' => ['card' => ['request_three_d_secure' => 'any']],
+            'payment_method_allowed' => ['qrph'],
+            'payment_method_options' => [],
             'currency'               => 'PHP',
             'capture_type'           => 'automatic',
             'description'            => 'PSS Grocery Order — ' . $user_name,

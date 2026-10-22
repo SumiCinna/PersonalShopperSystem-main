@@ -150,7 +150,7 @@ if ($action === 'create_qrph') {
 
     // If already succeeded (unlikely for QRPh but handle it)
     if ($pi_status === 'succeeded') {
-        $conn->query("UPDATE orders SET payment_status='paid', order_status='confirmed', payment_method='qrph' WHERE order_id=" . intval($order_id));
+        $conn->query("UPDATE orders SET payment_status='paid', order_status='pending', payment_method='qrph' WHERE order_id=" . intval($order_id));
         clearQRPhSession();
         echo json_encode(['success' => true, 'already_paid' => true, 'redirect' => 'receipt.php?order_id=' . $order_id]);
         exit();
@@ -198,7 +198,7 @@ if ($action === 'poll_qrph') {
     $status  = $attrs['status'] ?? 'awaiting_payment_method';
 
     if ($status === 'succeeded') {
-        $conn->query("UPDATE orders SET payment_status='paid', order_status='confirmed', payment_method='qrph' WHERE order_id=" . intval($order_id));
+        $conn->query("UPDATE orders SET payment_status='paid', order_status='pending', payment_method='qrph' WHERE order_id=" . intval($order_id));
         // Clear cart
         $selected_ids = $_SESSION['payment_selected_ids'] ?? [];
         if (!empty($selected_ids)) {

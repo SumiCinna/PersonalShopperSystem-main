@@ -236,7 +236,7 @@ require_once '../../includes/cashier_header.php';
                             // Payment method with Card fallback — applies to ALL statuses including cancelled
                             $pm_raw = trim((string)($row['payment_method'] ?? ''));
                             if ($pm_raw === '' || strtolower($pm_raw) === 'unpaid') {
-                                $pm_display = 'Card';
+                                $pm_display = 'QRPH';
                             } else {
                                 $pm_display = ucwords(str_replace('_', ' ', $pm_raw));
                             }

@@ -48,7 +48,7 @@ try {
         if (abs($paid_amount - $order['upfront_payment']) < 0.01) {
 
             // Extract the actual payment method used
-            $payment_method = 'Card';
+            $payment_method = 'QRPH';
             if (isset($payment_intent['data']['relationships']['payments']['data'][0]['id'])) {
                 $payment_id = $payment_intent['data']['relationships']['payments']['data'][0]['id'];
                 
@@ -62,8 +62,8 @@ try {
                     $source_type = strtolower($payment_data['data']['attributes']['source']['type']);
                     if ($source_type === 'gcash') {
                         $payment_method = 'GCash';
-                    } elseif ($source_type === 'card') {
-                        $payment_method = 'Card';
+                    } elseif ($source_type === 'QRPH') {
+                        $payment_method = 'QRPH';
                     } elseif ($source_type === 'paymaya') {
                         $payment_method = 'PayMaya';
                     }
@@ -79,7 +79,7 @@ try {
                     UPDATE orders
                     SET
                         payment_status = 'paid',
-                        order_status = 'processing',
+                        
                         payment_method = ?,
                         paymongo_pi_id = ?
                     WHERE
@@ -126,3 +126,5 @@ try {
     error_log("General Error in payment_return.php: " . $e->getMessage());
     die("An unexpected error occurred. Please contact support.");
 }
+
+

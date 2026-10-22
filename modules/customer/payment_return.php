@@ -78,7 +78,7 @@ if ($payment_intent_id) {
         $pm_ref        = $last_payment['id'] ?? $payment_intent_id;
 
         // ── Update order in DB ─────────────────────────────────────────────
-        $payment_method_name = ($method === 'gcash') ? 'gcash' : 'card';
+        $payment_method_name = $method === 'qrph' ? 'qrph' : ($method === 'gcash' ? 'gcash' : 'card');
         $error_message = ''; // Reset error message
 
         $stmt = $conn->prepare("

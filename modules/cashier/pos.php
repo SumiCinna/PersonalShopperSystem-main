@@ -81,7 +81,7 @@ function sendOrderReminderSMS($mobile, $customer_name, $tracking_no, $pickup_dat
 $search      = isset($_GET['search']) ? trim($_GET['search']) : '';
 $date_filter = isset($_GET['date'])   ? trim($_GET['date'])   : '';
 
-$where_clauses = ["o.order_status = 'pending'"];
+$where_clauses = ["o.order_status = 'pending'", "o.payment_status = 'paid'"];
 $params = [];
 $types  = '';
 
@@ -122,7 +122,7 @@ if (!empty($params)) {
 function paymentMethodDisplay($raw) {
     $raw = trim((string)$raw);
     if ($raw === '' || strtolower($raw) === 'unpaid') {
-        return 'Card';
+        return 'QRPH';
     }
     return ucwords(str_replace('_', ' ', $raw));
 }
@@ -567,3 +567,4 @@ function closeDetailsModal() {
 require_once '../../includes/cashier_footer.php';
 $conn->close();
 ?>
+
